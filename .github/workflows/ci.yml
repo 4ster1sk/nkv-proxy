@@ -139,8 +139,12 @@ jobs:
             && echo "OK: GET / returned $STATUS" \
             || (echo "FAIL: expected 302 or 200, got $STATUS" && exit 1)
 
-      - name: Smoke — GET /api/v1/instance
-        run: curl -sf http://localhost:8000/api/v1/instance | grep -q "version"
+      - name: Smoke — GET /api/v1/instance (requires auth → 401)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/v1/instance)
+          [ "$STATUS" = "401" ] || [ "$STATUS" = "200" ] \
+            && echo "OK: /api/v1/instance returned $STATUS" \
+            || (echo "FAIL: expected 401 or 200, got $STATUS" && exit 1)
 
       - name: Smoke — GET /api/v1/streaming/health
         run: curl -sf http://localhost:8000/api/v1/streaming/health | grep -q "healthy"
