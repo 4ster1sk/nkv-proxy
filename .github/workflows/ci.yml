@@ -117,16 +117,15 @@ jobs:
             -e MASTODON_INSTANCE_URL=https://mastodon.social \
             -e DATABASE_URL=postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db \
             misskey-mastodon-proxy:ci
-          # ヘルスチェックが通るまで待機（最大 30 秒）
-          for i in $(seq 1 15); do
+          # ヘルスチェックが通るまで待機（最大 60 秒）
+          for i in $(seq 1 30); do
             sleep 2
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' proxy-ci 2>/dev/null || echo "none")
-            echo "Health: $STATUS (attempt $i)"
-            if [ "$STATUS" = "healthy" ] || curl -sf http://localhost:8000/ > /dev/null 2>&1; then
-              echo "Container ready"
+            if curl -sf http://localhost:8000/api/v1/streaming/health > /dev/null 2>&1; then
+              echo "Container ready (attempt $i)"
               break
             fi
-            if [ "$i" = "15" ]; then
+            echo "Waiting... (attempt $i)"
+            if [ "$i" = "30" ]; then
               echo "Timeout waiting for container"
               docker logs proxy-ci
               exit 1
