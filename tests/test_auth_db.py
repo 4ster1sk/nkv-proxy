@@ -202,3 +202,137 @@ class TestOAuthTokenCrud:
 # ---------------------------------------------------------------------------
 # API エンドポイント
 # ---------------------------------------------------------------------------
+
+class TestMiauthConfirmFlow:
+    """miAuth 認証確認画面フローのテスト。"""
+
+    def _setup_client(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        app.dependency_overrides[get_db] = _override_get_db
+        return TestClient(app)
+
+    def test_miauth_redirects_to_login_when_not_logged_in(self):
+        """未ログイン時は /login へリダイレクト。"""
+        client = self._setup_client()
+        sid = "1111aaaa-0000-0000-0000-000000000001"
+        resp = client.get(
+            f"/miauth/{sid}?name=App&permission=read:account",
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert "/login" in resp.headers.get("location", "")
+        assert sid in resp.headers.get("location", "")
+
+    def test_miauth_shows_confirm_page_when_logged_in(self):
+        """ログイン済みの場合、確認画面（許可する/拒否する）が表示される。"""
+        client = self._setup_client()
+        client.post("/register", data={
+            "username": "confirm_test1",
+            "password": "password123",
+            "password_confirm": "password123",
+        })
+        async def _set_masto():
+            async with _TestSession() as s:
+                user = await crud.get_user_by_username(s, "confirm_test1")
+                await crud.set_mastodon_credentials(
+                    s, user.id, token="masto_t1",
+                    instance="https://mastodon.social", account_id="m1",
+                )
+                await s.commit()
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(_set_masto())
+        client.post("/login", data={"username": "confirm_test1", "password": "password123"})
+
+        sid = "2222bbbb-0000-0000-0000-000000000001"
+        resp = client.get(f"/miauth/{sid}?name=TestApp&permission=read:account,write:notes")
+        assert resp.status_code == 200
+        assert "許可する" in resp.text
+        assert "拒否する" in resp.text
+        assert "TestApp" in resp.text
+        assert "アカウント情報" in resp.text
+
+    def test_miauth_approve_issues_token(self):
+        """「許可する」を押すと OAuthToken が発行される。"""
+        client = self._setup_client()
+        client.post("/register", data={
+            "username": "approve_test1",
+            "password": "password123",
+            "password_confirm": "password123",
+        })
+        async def _set_masto():
+            async with _TestSession() as s:
+                user = await crud.get_user_by_username(s, "approve_test1")
+                await crud.set_mastodon_credentials(
+                    s, user.id, token="masto_t2",
+                    instance="https://mastodon.social", account_id="m2",
+                )
+                await s.commit()
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(_set_masto())
+        client.post("/login", data={"username": "approve_test1", "password": "password123"})
+
+        sid = "3333cccc-0000-0000-0000-000000000001"
+        client.get(
+            f"/miauth/{sid}?name=App&permission=read:account"
+            f"&callback=https://example.com/cb"
+        )
+        resp = client.post(f"/miauth/{sid}/approve", follow_redirects=False)
+        assert resp.status_code == 302
+        loc = resp.headers.get("location", "")
+        assert "code=" + sid in loc
+
+        # token exchange
+        resp2 = client.post("/oauth/token", json={
+            "grant_type": "authorization_code", "code": sid,
+        })
+        assert resp2.status_code == 200
+        assert "access_token" in resp2.json()
+
+    def test_miauth_deny_returns_access_denied(self):
+        """「拒否する」を押すと error=access_denied になる。"""
+        client = self._setup_client()
+        client.post("/register", data={
+            "username": "deny_test1",
+            "password": "password123",
+            "password_confirm": "password123",
+        })
+        client.post("/login", data={"username": "deny_test1", "password": "password123"})
+
+        sid = "4444dddd-0000-0000-0000-000000000001"
+        client.get(
+            f"/miauth/{sid}?name=App&permission=read:account"
+            f"&callback=https://example.com/cb"
+        )
+        resp = client.post(f"/miauth/{sid}/deny", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "error=access_denied" in resp.headers.get("location", "")
+
+    def test_miauth_admin_warn_shown(self):
+        """admin権限を含む場合、確認画面に警告が表示される。"""
+        client = self._setup_client()
+        client.post("/register", data={
+            "username": "admin_warn_test1",
+            "password": "password123",
+            "password_confirm": "password123",
+        })
+        async def _set_masto():
+            async with _TestSession() as s:
+                user = await crud.get_user_by_username(s, "admin_warn_test1")
+                await crud.set_mastodon_credentials(
+                    s, user.id, token="masto_t3",
+                    instance="https://mastodon.social", account_id="m3",
+                )
+                await s.commit()
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(_set_masto())
+        client.post("/login", data={"username": "admin_warn_test1", "password": "password123"})
+
+        sid = "5555eeee-0000-0000-0000-000000000001"
+        resp = client.get(
+            f"/miauth/{sid}?name=AdminApp"
+            f"&permission=read:account,write:admin:delete-account"
+        )
+        assert resp.status_code == 200
+        assert "管理者権限" in resp.text
+        assert "AdminApp" in resp.text

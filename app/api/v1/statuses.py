@@ -21,13 +21,20 @@ async def home_timeline(
     limit: int = Query(20, le=40),
     max_id: str = Query(None),
     since_id: str = Query(None),
+    until_id: str = Query(None),
+    min_id: str = Query(None),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": limit}
-    if max_id:
+    params: dict = {"limit": limit}
+    # until_id → max_id (Mastodon), since_id → min_id (Mastodon)
+    if until_id:
+        params["max_id"] = until_id
+    elif max_id:
         params["max_id"] = max_id
     if since_id:
-        params["since_id"] = since_id
+        params["min_id"] = since_id
+    elif min_id:
+        params["min_id"] = min_id
     return await mk.home_timeline(**params)
 
 
@@ -38,13 +45,19 @@ async def public_timeline(
     limit: int = Query(20, le=40),
     max_id: str = Query(None),
     since_id: str = Query(None),
+    until_id: str = Query(None),
+    min_id: str = Query(None),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": limit, "local": local, "remote": remote}
-    if max_id:
+    params: dict = {"limit": limit, "local": local, "remote": remote}
+    if until_id:
+        params["max_id"] = until_id
+    elif max_id:
         params["max_id"] = max_id
     if since_id:
-        params["since_id"] = since_id
+        params["min_id"] = since_id
+    elif min_id:
+        params["min_id"] = min_id
     return await mk.public_timeline(**params)
 
 

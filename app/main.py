@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
@@ -9,6 +10,11 @@ from app.db.database import create_tables
 from app.api.v1 import accounts, statuses, misc, streaming
 from app.api.v1.auth import router as auth_router
 from app.api import nodeinfo, misskey_compat, misskey_endpoints
+
+
+# DEBUG ログ設定（Mastodon URL トレース用）
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("app.services.mastodon_client").setLevel(logging.DEBUG)
 
 
 @asynccontextmanager

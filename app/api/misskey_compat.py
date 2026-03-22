@@ -32,6 +32,23 @@ router = APIRouter(prefix="/api", tags=["misskey-compat"])
 # ---------------------------------------------------------------------------
 
 
+async def _check_admin_allowed(token: str, db: AsyncSession) -> None:
+    """
+    access_token が admin_restricted=True の場合 403 を返す。
+    /api/admin/* エンドポイントの冒頭で呼ぶ。
+    """
+    result = await crud.get_token_with_user(db, token)
+    if result is None:
+        raise HTTPException(status_code=401, detail="Credential required")
+    token_obj, _ = result
+    if token_obj.admin_restricted:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin API access is temporarily disabled for this token. "
+                   "Re-enable it from the dashboard."
+        )
+
+
 async def _body(request: Request) -> dict:
     try:
         return await request.json()
@@ -50,13 +67,25 @@ def _token(body: dict, request: Request) -> str | None:
 
 async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
     """
-    access_token → User → MastodonClient を返す。
-    Mastodon未連携の場合は空トークンでクライアントを生成（呼び出し側でエラーになる）。
+    access_token または api_key → User → MastodonClient を返す。
+    Mastodon未連携の場合は 403。
     """
+    # まず OAuthToken で検索
     result = await crud.get_token_with_user(db, token)
     if result is None:
-        raise HTTPException(status_code=401, detail="Invalid or revoked token")
-    _, user = result
+        # 次に ApiKey で検索
+        api_key_obj = await crud.get_api_key_by_key(db, token)
+        if api_key_obj is None:
+            raise HTTPException(status_code=401, detail="Invalid or revoked token")
+        from sqlalchemy import select as _sel
+        from app.db.models import User as _User
+        user_result = await db.execute(_sel(_User).where(_User.id == api_key_obj.user_id))
+        user = user_result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(status_code=401, detail="User not found")
+    else:
+        _, user = result
+
     if not user.mastodon_token:
         raise HTTPException(
             status_code=403,
@@ -294,15 +323,6 @@ async def api_stats(request: Request):
         }
 
 
-# ---------------------------------------------------------------------------
-# /api/emojis
-# ---------------------------------------------------------------------------
-
-@router.post("/emojis")
-async def api_emojis(request: Request):
-    body = await _body(request)
-    return await _forward("emojis", body)
-
 
 # ---------------------------------------------------------------------------
 # /api/i
@@ -380,11 +400,12 @@ async def api_notes_timeline(request: Request, db: AsyncSession = Depends(get_db
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    statuses = await mk.home_timeline(
-        limit=body.get("limit", 20),
-        since_id=body.get("sinceId"),
-        max_id=body.get("untilId"),
-    )
+    _tl_params: dict = {"limit": body.get("limit", 20)}
+    if body.get("untilId"):
+        _tl_params["max_id"] = body["untilId"]
+    if body.get("sinceId"):
+        _tl_params["min_id"] = body["sinceId"]
+    statuses = await mk.home_timeline(**_tl_params)
     return masto_statuses_to_mk_notes(statuses)
 
 
@@ -395,12 +416,12 @@ async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(
     mk = await _mastodon_client(token or "", db) if token else None
     if mk is None:
         return []
-    statuses = await mk.public_timeline(
-        local=True,
-        limit=body.get("limit", 20),
-        since_id=body.get("sinceId"),
-        max_id=body.get("untilId"),
-    )
+    _tl_params2: dict = {"local": True, "limit": body.get("limit", 20)}
+    if body.get("untilId"):
+        _tl_params2["max_id"] = body["untilId"]
+    if body.get("sinceId"):
+        _tl_params2["min_id"] = body["sinceId"]
+    statuses = await mk.public_timeline(**_tl_params2)
     return masto_statuses_to_mk_notes(statuses)
 
 
@@ -411,11 +432,12 @@ async def api_notes_global_timeline(request: Request, db: AsyncSession = Depends
     mk = await _mastodon_client(token or "", db) if token else None
     if mk is None:
         return []
-    statuses = await mk.public_timeline(
-        limit=body.get("limit", 20),
-        since_id=body.get("sinceId"),
-        max_id=body.get("untilId"),
-    )
+    _tl_params3: dict = {"limit": body.get("limit", 20)}
+    if body.get("untilId"):
+        _tl_params3["max_id"] = body["untilId"]
+    if body.get("sinceId"):
+        _tl_params3["min_id"] = body["sinceId"]
+    statuses = await mk.public_timeline(**_tl_params3)
     return masto_statuses_to_mk_notes(statuses)
 
 
@@ -777,3 +799,156 @@ async def api_miauth_check(
             "fields": [],
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# /api/emojis
+# ---------------------------------------------------------------------------
+
+@router.post("/emojis")
+async def api_emojis(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    カスタム絵文字一覧を返す。
+    Mastodon の GET /api/v1/custom_emojis を呼んで Misskey 互換形式に変換する。
+    認証不要（ゲストでも取得可能）。
+    """
+    body = await _body(request)
+    token = _token(body, request)
+
+    emojis_raw: list = []
+    if token:
+        try:
+            mk = await _mastodon_client(token, db)
+            emojis_raw = await mk.get_custom_emojis()
+        except HTTPException:
+            pass
+
+    if not emojis_raw:
+        # 認証なし / 取得失敗時は上流にゲストで問い合わせ
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{settings.MASTODON_INSTANCE_URL}/api/v1/custom_emojis"
+                )
+            if resp.status_code == 200:
+                emojis_raw = resp.json()
+        except Exception:
+            emojis_raw = []
+
+    emojis = [
+        {
+            "name": e.get("shortcode", ""),
+            "url": e.get("url", ""),
+            "category": e.get("category") or "",
+            "aliases": [],
+            "host": None,
+            "isSensitive": False,
+            "roleIdsThatCanBeUsedThisEmojiAsReaction": [],
+            "localOnly": False,
+        }
+        for e in emojis_raw
+    ]
+    return {"emojis": emojis}
+
+
+
+# ---------------------------------------------------------------------------
+# /api/admin/*  — 管理者 API（admin_restricted フラグで一時無効化可能）
+# ---------------------------------------------------------------------------
+
+@router.post("/admin/show-users")
+async def api_admin_show_users(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    mk = await _mastodon_client(token, db)
+    accounts = await mk._get("admin/accounts", params={
+        "limit": body.get("limit", 20),
+        "origin": body.get("origin", "local"),
+    })
+    return accounts if isinstance(accounts, list) else []
+
+
+@router.post("/admin/show-user")
+async def api_admin_show_user(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    mk = await _mastodon_client(token, db)
+    return await mk._get(f"admin/accounts/{body['userId']}")
+
+
+@router.post("/admin/suspend-user")
+async def api_admin_suspend_user(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    mk = await _mastodon_client(token, db)
+    await mk._post(f"admin/accounts/{body['userId']}/action",
+                   json={"type": "suspend"})
+    return {}
+
+
+@router.post("/admin/unsuspend-user")
+async def api_admin_unsuspend_user(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    mk = await _mastodon_client(token, db)
+    await mk._post(f"admin/accounts/{body['userId']}/unsuspend")
+    return {}
+
+
+@router.post("/admin/get-index-stats")
+async def api_admin_index_stats(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    # Mastodon に同等エンドポイントなし → ダミーレスポンス
+    return []
+
+
+@router.post("/admin/get-table-stats")
+async def api_admin_table_stats(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    return {}
+
+
+@router.post("/admin/server-info")
+async def api_admin_server_info(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    return {"machine": "proxy", "cpu": {}, "mem": {}, "fs": {}, "net": {}}
+
+
+@router.post("/admin/abuse-user-reports")
+async def api_admin_abuse_reports(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    await _check_admin_allowed(token, db)
+    mk = await _mastodon_client(token, db)
+    try:
+        reports = await mk._get("admin/reports", params={"limit": body.get("limit", 20)})
+        return reports if isinstance(reports, list) else []
+    except Exception:
+        return []

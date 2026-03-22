@@ -126,3 +126,7 @@ def downgrade() -> None:
     op.drop_table("miauth_sessions")
     op.drop_table("registered_apps")
     op.drop_table("users")
+
+# NOTE: 0002 マイグレーションで追加されたカラム・テーブルは
+# create_tables() (SQLAlchemy metadata.create_all) で自動作成される。
+# alembic upgrade で適用する場合は 0002_add_admin_restriction.py を使用すること。

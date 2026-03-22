@@ -418,7 +418,12 @@ async def dashboard(
 
     current_token, user = result
 
-    # 認証済みアプリ一覧（このユーザーの有効トークン）
+    # Web UI テスト用 API キー（なければ作成）
+    api_key_obj = await crud.get_or_create_api_key(db, user.id)
+    await db.commit()
+    web_api_key = api_key_obj.key
+
+    # 認証済みアプリ一覧
     tokens_result = await db.execute(
         select(OAuthToken)
         .where(OAuthToken.user_id == user.id, OAuthToken.revoked == False)  # noqa
@@ -430,34 +435,71 @@ async def dashboard(
     app_items = ""
     for t in tokens:
         if t.access_token == current_token.access_token:
-            continue  # ダッシュボードセッション自体は除外
-        scopes_badge = f'<span class="badge">{t.scopes[:30]}</span>'
+            continue
         created = t.created_at.strftime("%Y/%m/%d %H:%M") if t.created_at else ""
         last_used = t.last_used_at.strftime("%Y/%m/%d %H:%M") if t.last_used_at else "未使用"
+
+        # 権限リスト（折りたたみ表示用）
+        scopes_list = [s.strip() for s in t.scopes.replace(",", " ").split() if s.strip()]
+        has_admin = any("admin" in s for s in scopes_list)
+        admin_count = sum(1 for s in scopes_list if "admin" in s)
+        perm_items = "".join(
+            f'<li>✓ {_PERM_LABELS.get(s, s)}</li>'
+            for s in scopes_list if "admin" not in s
+        )
+        if admin_count:
+            perm_items += f'<li style="color:#856404">⚠️ 管理者権限 ({admin_count}項目)</li>'
+
+        # admin 制限トグル
+        if has_admin:
+            if t.admin_restricted:
+                admin_btn = f"""
+              <form method="post" action="/dashboard/admin-restrict/{t.id}/disable" style="margin:0">
+                <button type="submit" class="btn btn-secondary btn-sm" title="admin APIは現在無効">🔒 admin: 無効</button>
+              </form>"""
+            else:
+                admin_btn = f"""
+              <form method="post" action="/dashboard/admin-restrict/{t.id}/enable" style="margin:0">
+                <button type="submit" class="btn btn-sm" style="background:#e8a020;color:#fff" title="admin APIは現在有効">🔓 admin: 有効</button>
+              </form>"""
+        else:
+            admin_btn = ""
+
         app_items += f"""
-        <li class="app-item">
-          <div>
-            <div class="app-name">アプリ #{t.id}</div>
-            <div class="app-meta">登録: {created} / 最終利用: {last_used}</div>
-            <div style="margin-top:.2rem">{scopes_badge}</div>
+        <li class="app-item" style="flex-direction:column;align-items:stretch;gap:.4rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.4rem">
+            <div>
+              <div class="app-name">アプリ #{t.id}</div>
+              <div class="app-meta">登録: {created} / 最終利用: {last_used}</div>
+            </div>
+            <div style="display:flex;gap:.4rem;align-items:center;flex-shrink:0">
+              {admin_btn}
+              <form method="post" action="/dashboard/revoke/{t.id}" style="margin:0">
+                <button type="submit" class="btn btn-danger btn-sm">取消</button>
+              </form>
+            </div>
           </div>
-          <form method="post" action="/dashboard/revoke/{t.id}" style="margin:0">
-            <button type="submit" class="btn btn-danger btn-sm">取消</button>
-          </form>
+          <details>
+            <summary style="font-size:.78rem;color:var(--primary);cursor:pointer;user-select:none">
+              権限を見る ▽
+            </summary>
+            <ul style="list-style:none;padding:.4rem .6rem;font-size:.8rem;color:var(--text-2)">
+              {perm_items}
+            </ul>
+          </details>
         </li>"""
 
     if not app_items:
-        app_items = '<li style="color:#aaa;font-size:.88rem;padding:.5rem">認証済みアプリはありません</li>'
+        app_items = '<li style="color:var(--text-3);font-size:.88rem;padding:.5rem">認証済みアプリはありません</li>'
 
     # Mastodon 連携状態
     if user.mastodon_token:
         instance_host = (user.mastodon_instance or settings.MASTODON_INSTANCE_URL).replace("https://", "").rstrip("/")
         mastodon_section = f"""
         <p class="section-title">Mastodon連携</p>
-        <div style="display:flex;align-items:center;gap:.8rem;padding:.6rem .8rem;
-                    background:#f0fff4;border-radius:8px;margin-bottom:.5rem">
-          <span class="badge green">✓ 連携済み</span>
-          <span style="font-size:.88rem;color:#333">{instance_host}</span>
+        <div class="mastodon-connected">
+          <span class="badge badge-green">✓ 連携済み</span>
+          <span style="font-size:.88rem">{instance_host}</span>
           <form method="post" action="/dashboard/mastodon-disconnect" style="margin:0;margin-left:auto">
             <button type="submit" class="btn btn-secondary btn-sm">解除</button>
           </form>
@@ -466,8 +508,7 @@ async def dashboard(
         mastodon_section = f"""
         <p class="section-title">Mastodon連携</p>
         <div class="alert alert-warn">
-          ⚠️ Mastodonとまだ連携していません。
-          アプリからのAPI利用にはMastodon連携が必要です。
+          ⚠️ Mastodonとまだ連携していません。アプリからのAPI利用にはMastodon連携が必要です。
         </div>
         <form method="post" action="/dashboard/mastodon-connect">
           <div class="form-group">
@@ -482,25 +523,114 @@ async def dashboard(
     warn_html = f'<div class="alert alert-warn">⚠️ {warn}</div>' if warn else ""
     success_html = f'<div class="alert alert-success">✅ {success}</div>' if success else ""
 
-    body = f"""
-<div class="card wide">
-  <div class="header">
-    <h1>👋 @{user.username} さん、ようこそ！</h1>
-    <p>{settings.APP_NAME} ダッシュボード</p>
-  </div>
-  <div class="body">
-    {warn_html}{success_html}
-    {mastodon_section}
-    <hr>
-    <p class="section-title">認証済みアプリ</p>
-    <ul class="app-list">{app_items}</ul>
-    <hr>
-    <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-      <a href="/settings/2fa"><button class="btn btn-secondary btn-sm">2段階認証設定</button></a>
-      <a href="/logout"><button class="btn btn-secondary btn-sm">ログアウト</button></a>
-    </div>
-  </div>
-</div>"""
+    # ---- HTML 組み立て（変数を先に展開してから埋め込む）----
+    _username = user.username
+    _appname = settings.APP_NAME
+    body = (
+        '<div class="card wide">'
+        '<div class="header">'
+        f'<h1>👋 @{_username} さん、ようこそ！</h1>'
+        f'<p>{_appname} ダッシュボード</p>'
+        '</div>'
+        '<div class="body">'
+        + warn_html + success_html
+        + mastodon_section
+        + '<hr>'
+        '<p class="section-title">認証済みアプリ</p>'
+        f'<ul class="app-list">{app_items}</ul>'
+        '<hr>'
+        '<p class="section-title">🔑 共通 API キー</p>'
+        '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">'
+        f'<code id="webApiKey" style="background:var(--surface-2);border:1px solid var(--border);'
+        'border-radius:6px;padding:.3rem .7rem;font-size:.82rem;flex:1;word-break:break-all">'
+        f'{web_api_key}</code>'
+        '<form method="post" action="/dashboard/regenerate-api-key" style="margin:0">'
+        '<button type="submit" class="btn btn-secondary btn-sm">再生成</button>'
+        '</form></div>'
+        '<hr>'
+        '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem">'
+        '<a href="/settings/2fa"><button class="btn btn-secondary btn-sm">2段階認証設定</button></a>'
+        '<a href="/logout"><button class="btn btn-secondary btn-sm">ログアウト</button></a>'
+        '</div>'
+        '<hr>'
+        '<p class="section-title">🧪 Misskey API テスト</p>'
+        '<div class="form-group">'
+        '<label>エンドポイント（例: i / notes/timeline）</label>'
+        '<input type="text" id="mkEp" value="i" placeholder="i">'
+        '</div>'
+        '<div class="form-group">'
+        '<label>リクエストボディ (JSON)</label>'
+        '<textarea id="mkBody" rows="3" style="width:100%;padding:.6rem .85rem;border:1.5px solid var(--border);'
+        'border-radius:8px;font-family:monospace;font-size:.84rem;resize:vertical;'
+        'background:var(--surface);color:var(--text)">{"limit":5}</textarea>'
+        '</div>'
+        '<label style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-size:.85rem;cursor:pointer">'
+        '<input type="checkbox" id="mkUseToken" checked> 認証トークンを使用（共通 API キー）'
+        '</label>'
+        '<button type="button" class="btn" onclick="runMk()" style="max-width:160px;margin-bottom:.8rem">送信</button>'
+        '<pre id="mkResult" style="display:none;background:var(--surface-2);border:1px solid var(--border);'
+        'border-radius:8px;padding:.8rem;font-size:.78rem;max-height:280px;overflow:auto;white-space:pre-wrap"></pre>'
+        '<hr>'
+        '<p class="section-title">🧪 Mastodon API テスト</p>'
+        '<div style="display:flex;gap:.6rem;margin-bottom:.6rem">'
+        '<select id="mastoMethod" style="padding:.55rem .7rem;border:1.5px solid var(--border);'
+        'border-radius:8px;background:var(--surface);color:var(--text);font-size:.9rem">'
+        '<option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option>'
+        '</select>'
+        '<input type="text" id="mastoPath" value="timelines/home" placeholder="timelines/home" style="flex:1">'
+        '</div>'
+        '<div class="form-group">'
+        '<label>リクエストボディ (POST/PUT のみ)</label>'
+        '<textarea id="mastoBody" rows="2" style="width:100%;padding:.6rem .85rem;border:1.5px solid var(--border);'
+        'border-radius:8px;font-family:monospace;font-size:.84rem;resize:vertical;'
+        'background:var(--surface);color:var(--text)" placeholder="{}"></textarea>'
+        '</div>'
+        '<label style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-size:.85rem;cursor:pointer">'
+        '<input type="checkbox" id="mastoUseToken" checked> 認証トークンを使用（mastodon_token）'
+        '</label>'
+        '<button type="button" class="btn" onclick="runMasto()" style="max-width:160px;margin-bottom:.8rem">送信</button>'
+        '<pre id="mastoResult" style="display:none;background:var(--surface-2);border:1px solid var(--border);'
+        'border-radius:8px;padding:.8rem;font-size:.78rem;max-height:280px;overflow:auto;white-space:pre-wrap"></pre>'
+        """<script>
+    const API_KEY = document.getElementById("webApiKey").textContent.trim();
+    async function runMk() {
+      const pre = document.getElementById("mkResult");
+      pre.style.display = "block"; pre.textContent = "送信中...";
+      try {
+        let b = {};
+        try { b = JSON.parse(document.getElementById("mkBody").value || "{}"); } catch(e) {}
+        if (document.getElementById("mkUseToken").checked) b.i = API_KEY;
+        const r = await fetch("/api/" + document.getElementById("mkEp").value.trim(),
+          {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+        const d = await r.json().catch(()=>r.text());
+        pre.textContent = JSON.stringify(d, null, 2);
+      } catch(e) { pre.textContent = "エラー: " + e.message; }
+    }
+    async function runMasto() {
+      const pre = document.getElementById("mastoResult");
+      pre.style.display = "block"; pre.textContent = "送信中...";
+      try {
+        const method = document.getElementById("mastoMethod").value;
+        const path = document.getElementById("mastoPath").value.trim();
+        const useToken = document.getElementById("mastoUseToken").checked;
+        const bodyText = document.getElementById("mastoBody").value.trim();
+        const r = await fetch("/dashboard/mastodon-api-test", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            method: method,
+            path: path,
+            use_token: useToken,
+            body: (["POST","PUT"].includes(method) && bodyText) ? JSON.parse(bodyText) : null
+          })
+        });
+        const d = await r.json().catch(()=>r.text());
+        pre.textContent = JSON.stringify(d, null, 2);
+      } catch(e) { pre.textContent = "エラー: " + e.message; }
+    }
+    </script>"""
+        + '</div></div>'
+    )
     return HTMLResponse(content=_page("ダッシュボード", body, body_class="dashboard"))
 
 
@@ -585,6 +715,108 @@ async def dashboard_revoke_token(
 
 
 # ---------------------------------------------------------------------------
+# POST /dashboard/mastodon-api-test  — Mastodon API テスト（バックエンド経由）
+# ---------------------------------------------------------------------------
+
+@router.post("/dashboard/mastodon-api-test")
+async def dashboard_mastodon_api_test(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    ダッシュボードの Mastodon API テストフォームからの呼び出し。
+    ユーザーの mastodon_token を使って上流 Mastodon API を叩く。
+    """
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    _, user = result
+
+    body = await request.json()
+    method = body.get("method", "GET").upper()
+    path = body.get("path", "").strip("/")
+    use_token = body.get("use_token", True)
+    req_body = body.get("body")
+
+    instance = user.mastodon_instance or settings.MASTODON_INSTANCE_URL
+    url = f"{instance}/api/v1/{path}"
+
+    headers: dict = {"Content-Type": "application/json"}
+    if use_token and user.mastodon_token:
+        headers["Authorization"] = f"Bearer {user.mastodon_token}"
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            if method == "GET":
+                resp = await client.get(url, headers=headers)
+            elif method == "DELETE":
+                resp = await client.delete(url, headers=headers)
+            elif method == "PUT":
+                resp = await client.put(url, headers=headers, json=req_body)
+            else:  # POST
+                resp = await client.post(url, headers=headers, json=req_body)
+        try:
+            return resp.json()
+        except Exception:
+            return {"status": resp.status_code, "text": resp.text}
+    except Exception as e:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /dashboard/admin-restrict  — Admin制限トグル
+# ---------------------------------------------------------------------------
+
+@router.post("/dashboard/admin-restrict/{token_id}/enable")
+async def dashboard_admin_restrict_enable(
+    token_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        return RedirectResponse(url="/login", status_code=302)
+    _, user = result
+    token = await db.get(OAuthToken, token_id)
+    if token and token.user_id == user.id:
+        await crud.set_admin_restricted(db, token_id, True)
+        await db.commit()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+@router.post("/dashboard/admin-restrict/{token_id}/disable")
+async def dashboard_admin_restrict_disable(
+    token_id: int, request: Request, db: AsyncSession = Depends(get_db)
+):
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        return RedirectResponse(url="/login", status_code=302)
+    _, user = result
+    token = await db.get(OAuthToken, token_id)
+    if token and token.user_id == user.id:
+        await crud.set_admin_restricted(db, token_id, False)
+        await db.commit()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# POST /dashboard/regenerate-api-key
+# ---------------------------------------------------------------------------
+
+@router.post("/dashboard/regenerate-api-key")
+async def dashboard_regenerate_api_key(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        return RedirectResponse(url="/login", status_code=302)
+    _, user = result
+    await crud.regenerate_api_key(db, user.id)
+    await db.commit()
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+# ---------------------------------------------------------------------------
 # GET /miauth/{session_id}  — Miriaからの認証エントリポイント
 # ---------------------------------------------------------------------------
 
@@ -599,8 +831,10 @@ async def miauth_entry(
 ):
     """
     Miria等のクライアントが叩く認証エントリポイント。
-    セッションをDBに登録してログインページへリダイレクト。
+    - ログイン済み: 権限確認画面を表示（許可する / 拒否する）
+    - 未ログイン:   /login?next={session_id} へリダイレクト
     """
+    # セッション登録（なければ作成）
     session = await crud.get_miauth_session(db, session_id)
     if session is None:
         await crud.create_miauth_session(
@@ -612,11 +846,92 @@ async def miauth_entry(
             permission=permission,
         )
         await db.commit()
+    elif name and not session.app_name:
+        from sqlalchemy import update as _upd
+        from app.db.models import MiAuthSession as _MS
+        await db.execute(
+            _upd(_MS).where(_MS.session_id == session_id)
+            .values(app_name=name, permission=permission)
+        )
+        await db.commit()
 
-    return RedirectResponse(
-        url=f"/login?next={session_id}",
-        status_code=302,
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        # 未ログイン → ログインページへ
+        return RedirectResponse(url=f"/login?next={session_id}", status_code=302)
+
+    # ログイン済み → 確認画面を表示
+    _, user = result
+    effective_name = name or (session.app_name if session else settings.APP_NAME)
+    effective_perm = permission or (session.permission if session else "")
+    return HTMLResponse(content=_miauth_confirm_page(
+        session_id=session_id,
+        app_name=effective_name,
+        permission=effective_perm,
+        username=user.username,
+    ))
+
+
+@router.post("/miauth/{session_id}/approve")
+async def miauth_approve(
+    session_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """ユーザーが「許可する」を押したとき。"""
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        return RedirectResponse(url=f"/login?next={session_id}", status_code=302)
+    _, user = result
+
+    session = await crud.get_miauth_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Session not found or expired.")
+
+    await crud.authorize_miauth_session(db, session_id=session_id, user_id=user.id)
+    await crud.create_oauth_token(
+        db, session_id=session_id, app_id=session.app_id,
+        user_id=user.id, scopes=session.scopes,
     )
+    await db.commit()
+
+    redirect_uri = session.redirect_uri
+    if redirect_uri and redirect_uri not in ("urn:ietf:wg:oauth:2.0:oob", ""):
+        sep = "&" if "?" in redirect_uri else "?"
+        return RedirectResponse(url=f"{redirect_uri}{sep}code={session_id}", status_code=302)
+    return HTMLResponse(content=_done_html(user.username, session_id, session.app_name))
+
+
+@router.post("/miauth/{session_id}/deny")
+async def miauth_deny(
+    session_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """ユーザーが「拒否する」を押したとき。"""
+    session = await crud.get_miauth_session(db, session_id)
+    if session:
+        from sqlalchemy import delete as _del
+        from app.db.models import MiAuthSession as _MS
+        await db.execute(_del(_MS).where(_MS.session_id == session_id))
+        await db.commit()
+
+    redirect_uri = session.redirect_uri if session else None
+    if redirect_uri and redirect_uri not in ("urn:ietf:wg:oauth:2.0:oob", ""):
+        sep = "&" if "?" in redirect_uri else "?"
+        return RedirectResponse(
+            url=f"{redirect_uri}{sep}error=access_denied&error_description=User+denied+access",
+            status_code=302,
+        )
+    body = """
+<div class="card">
+  <div class="header"><h1>🚫 アクセスを拒否しました</h1><p></p></div>
+  <div class="body">
+    <p>アクセスを拒否しました。このページを閉じてください。</p>
+    <a href="/dashboard"><button class="btn btn-secondary" style="margin-top:1rem">ダッシュボードへ</button></a>
+  </div>
+</div>"""
+    return HTMLResponse(content=_page("拒否", body))
 
 
 # ---------------------------------------------------------------------------
@@ -964,6 +1279,58 @@ async def settings_2fa_disable(
 # ---------------------------------------------------------------------------
 # ヘルパー: 認証完了HTML
 # ---------------------------------------------------------------------------
+
+_PERM_LABELS = {'read:account': 'アカウント情報の読み取り', 'write:account': 'アカウント情報の変更', 'read:blocks': 'ブロックリストの読み取り', 'write:blocks': 'ブロック操作', 'read:drive': 'ドライブの読み取り', 'write:drive': 'ドライブへのアップロード', 'read:favorites': 'お気に入りの読み取り', 'write:favorites': 'お気に入りの追加・削除', 'read:following': 'フォロー情報の読み取り', 'write:following': 'フォロー・フォロー解除', 'read:messaging': 'メッセージの読み取り', 'write:messaging': 'メッセージの送信', 'read:mutes': 'ミュートリストの読み取り', 'write:mutes': 'ミュート操作', 'write:notes': 'ノートの投稿・削除', 'read:notifications': '通知の読み取り', 'write:notifications': '通知の操作', 'read:reactions': 'リアクションの読み取り', 'write:reactions': 'リアクションの追加・削除', 'write:votes': 'アンケートへの投票', 'read:channels': 'チャンネルの読み取り', 'write:channels': 'チャンネルの作成・管理', 'read:gallery': 'ギャラリーの読み取り', 'write:gallery': 'ギャラリーの投稿', 'read:federation': '連合情報の読み取り', 'write:report-abuse': '違反報告の送信'}
+
+
+def _miauth_confirm_page(
+    session_id: str, app_name: str, permission: str, username: str
+) -> str:
+    """miAuth権限確認画面。"""
+    perms = [p.strip() for p in permission.split(",") if p.strip()]
+    admin_perms = [p for p in perms if "admin" in p]
+    normal_perms = [p for p in perms if "admin" not in p]
+
+    perm_items = "\n".join(
+        f'<li style="padding:.2rem 0">✓ {_PERM_LABELS.get(p, p)}</li>'
+        for p in normal_perms
+    )
+    if admin_perms:
+        perm_items += f'\n<li style="padding:.2rem 0;color:#856404">⚠️ 管理者権限 ({len(admin_perms)}項目)</li>'
+
+    admin_warn = """
+    <div class="alert alert-warn">
+      ⚠️ このアプリは<strong>管理者権限</strong>を要求しています。信頼できるアプリにのみ許可してください。
+    </div>""" if admin_perms else ""
+
+    body = f"""
+<div class="card">
+  <div class="header">
+    <h1>🔐 アクセス許可の確認</h1>
+    <p>@{username} としてログイン中</p>
+  </div>
+  <div class="body">
+    {admin_warn}
+    <p style="font-size:.9rem;margin-bottom:.8rem">
+      <strong>{app_name}</strong> が以下の権限を要求しています：
+    </p>
+    <ul style="list-style:none;background:var(--surface-2);border:1px solid var(--border);
+               border-radius:8px;padding:.6rem .9rem;margin-bottom:1.2rem;
+               max-height:200px;overflow-y:auto;font-size:.88rem">
+      {perm_items}
+    </ul>
+    <div style="display:flex;gap:.6rem">
+      <form method="post" action="/miauth/{session_id}/approve" style="flex:1;margin:0">
+        <button type="submit" class="btn">✓ 許可する</button>
+      </form>
+      <form method="post" action="/miauth/{session_id}/deny" style="flex:1;margin:0">
+        <button type="submit" class="btn btn-secondary">✗ 拒否する</button>
+      </form>
+    </div>
+  </div>
+</div>"""
+    return _page("アクセス許可の確認", body)
+
 
 def _done_html(username: str, session_id: str, app_name: str) -> str:
     body = f"""

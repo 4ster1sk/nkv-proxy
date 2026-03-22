@@ -172,6 +172,8 @@ class OAuthToken(Base):
         Text, nullable=False, default="read write follow push"
     )
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # admin API の一時的な無効化フラグ
+    admin_restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
@@ -241,3 +243,25 @@ class MastodonOAuthState(Base):
 
     user: Mapped["User"] = relationship(back_populates="mastodon_states")
     mastodon_app: Mapped["MastodonApp"] = relationship(back_populates="states")
+
+
+# ---------------------------------------------------------------------------
+# api_keys  — Web UI テスト用の共通 API キー
+# ---------------------------------------------------------------------------
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False, default="Web UI テスト用")
+    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_now
+    )
+
+    user: Mapped["User"] = relationship()

@@ -6,9 +6,13 @@ User.mastodon_token と User.mastodon_instance を使って
 """
 
 from __future__ import annotations
+import logging
 import httpx
 from fastapi import HTTPException
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class MastodonClient:
@@ -18,9 +22,11 @@ class MastodonClient:
         self.headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     async def _get(self, path: str, params: dict | None = None) -> dict | list:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon GET %s params=%s", url, params)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(
-                f"{self.base}/api/v1/{path}",
+                url,
                 headers=self.headers,
                 params=params or {},
             )
@@ -31,9 +37,11 @@ class MastodonClient:
         return resp.json()
 
     async def _post(self, path: str, json: dict | None = None, data: dict | None = None) -> dict | list:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon POST %s", url)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
-                f"{self.base}/api/v1/{path}",
+                url,
                 headers=self.headers,
                 json=json,
                 data=data,
@@ -45,9 +53,11 @@ class MastodonClient:
         return resp.json()
 
     async def _delete(self, path: str) -> dict | list:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon DELETE %s", url)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.delete(
-                f"{self.base}/api/v1/{path}",
+                url,
                 headers=self.headers,
             )
         if resp.status_code == 204:
@@ -141,9 +151,11 @@ class MastodonClient:
         return await self._delete(f"statuses/{status_id}/emoji_reactions/{emoji}")  # type: ignore
 
     async def _put(self, path: str) -> dict:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon PUT %s", url)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.put(
-                f"{self.base}/api/v1/{path}", headers=self.headers
+                url, headers=self.headers
             )
         if resp.status_code >= 400:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
@@ -151,10 +163,12 @@ class MastodonClient:
 
     # ── Timelines ──────────────────────────────────────────────────────
     async def home_timeline(self, **params) -> list:
-        return await self._get("timelines/home", params=params)  # type: ignore
+        clean = {k: v for k, v in params.items() if v is not None}
+        return await self._get("timelines/home", params=clean)  # type: ignore
 
     async def public_timeline(self, **params) -> list:
-        return await self._get("timelines/public", params=params)  # type: ignore
+        clean = {k: v for k, v in params.items() if v is not None}
+        return await self._get("timelines/public", params=clean)  # type: ignore
 
     async def get_bookmarks(self, **params) -> list:
         return await self._get("bookmarks", params=params)  # type: ignore
@@ -175,11 +189,15 @@ class MastodonClient:
 
     # ── Instance ───────────────────────────────────────────────────────
     async def get_instance(self) -> dict:
+        url = f"{self.base}/api/v1/instance"
+        logger.debug("Mastodon GET %s", url)
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{self.base}/api/v1/instance")
+            resp = await client.get(url)
         return resp.json() if resp.status_code == 200 else {}
 
     async def get_custom_emojis(self) -> list:
+        url = f"{self.base}/api/v1/custom_emojis"
+        logger.debug("Mastodon GET %s", url)
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{self.base}/api/v1/custom_emojis")
+            resp = await client.get(url)
         return resp.json() if resp.status_code == 200 else []

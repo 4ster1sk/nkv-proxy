@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.models import (
-    MastodonApp, MastodonOAuthState, MiAuthSession,
+    ApiKey, MastodonApp, MastodonOAuthState, MiAuthSession,
     OAuthToken, RegisteredApp, User,
 )
 
@@ -325,3 +325,57 @@ async def delete_mastodon_oauth_state(db: AsyncSession, state_id: str) -> None:
     await db.execute(
         delete(MastodonOAuthState).where(MastodonOAuthState.id == state_id)
     )
+
+
+# ---------------------------------------------------------------------------
+# ApiKey
+# ---------------------------------------------------------------------------
+
+async def get_or_create_api_key(db: AsyncSession, user_id: str) -> "ApiKey":
+    """ユーザーの Web UI テスト用 API キーを取得または作成する。"""
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.user_id == user_id)
+    )
+    key = result.scalar_one_or_none()
+    if key:
+        return key
+    key = ApiKey(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        key=secrets.token_urlsafe(40),
+        name="Web UI テスト用",
+    )
+    db.add(key)
+    await db.flush()
+    return key
+
+
+async def get_api_key_by_key(db: AsyncSession, key: str) -> "ApiKey | None":
+    from app.db.models import ApiKey as AK
+    result = await db.execute(select(AK).where(AK.key == key))
+    return result.scalar_one_or_none()
+
+
+async def regenerate_api_key(db: AsyncSession, user_id: str) -> "ApiKey":
+    from sqlalchemy import update as sa_update
+    new_key = secrets.token_urlsafe(40)
+    await db.execute(
+        sa_update(ApiKey).where(ApiKey.user_id == user_id).values(key=new_key)
+    )
+    await db.flush()
+    return await get_or_create_api_key(db, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Admin restriction
+# ---------------------------------------------------------------------------
+
+async def set_admin_restricted(
+    db: AsyncSession, token_id: int, restricted: bool
+) -> None:
+    from sqlalchemy import update as sa_update
+    from app.db.models import OAuthToken as OAT
+    await db.execute(
+        sa_update(OAT).where(OAT.id == token_id).values(admin_restricted=restricted)
+    )
+    await db.flush()
