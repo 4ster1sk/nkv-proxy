@@ -39,6 +39,7 @@ COPY --from=builder /install /usr/local
 
 # アプリケーションコードのみコピー
 COPY app/ ./app/
+COPY scripts/ ./scripts/
 
 # 所有権を非rootユーザーに移す
 RUN chown -R appuser:appuser /app
