@@ -95,10 +95,27 @@ jobs:
       # ─── コンテナを起動してスモークテスト ──────────────────
       - name: Start container
         run: |
+          # Start a PostgreSQL container for the proxy
+          docker run -d \
+            --name ci-postgres \
+            -e POSTGRES_DB=proxy_db \
+            -e POSTGRES_USER=proxy \
+            -e POSTGRES_PASSWORD=proxy \
+            postgres:18-alpine
+          # Wait for postgres to be ready
+          for i in $(seq 1 10); do
+            sleep 2
+            if docker exec ci-postgres pg_isready -U proxy 2>/dev/null; then
+              echo "PostgreSQL ready"
+              break
+            fi
+          done
           docker run -d \
             --name proxy-ci \
             -p 8000:8000 \
+            --link ci-postgres:postgres \
             -e MASTODON_INSTANCE_URL=https://mastodon.social \
+            -e DATABASE_URL=postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db \
             misskey-mastodon-proxy:ci
           # ヘルスチェックが通るまで待機（最大 30 秒）
           for i in $(seq 1 15); do
@@ -181,9 +198,11 @@ jobs:
         if: always()
         run: docker logs proxy-ci 2>&1 | tail -40
 
-      - name: Stop container
+      - name: Stop containers
         if: always()
-        run: docker rm -f proxy-ci || true
+        run: |
+          docker rm -f proxy-ci || true
+          docker rm -f ci-postgres || true
 
 # ─────────────────────────────────────────
 # 4. Trivy セキュリティスキャン
@@ -235,6 +254,7 @@ jobs:
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy-results.sarif
 
