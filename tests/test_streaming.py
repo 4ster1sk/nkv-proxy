@@ -5,11 +5,11 @@
 MisskeyStreamingProxy._convert_event() および _masto_notification_to_mk() をテスト。
 """
 import json
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.streaming import MisskeyStreamingProxy, _masto_notification_to_mk
-
 
 # ---------------------------------------------------------------------------
 # テスト用 Mastodon フォーマットサンプル

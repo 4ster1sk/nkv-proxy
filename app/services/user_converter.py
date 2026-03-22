@@ -6,9 +6,9 @@ UserDetailed: /api/i, /api/users/show 等の詳細版
 """
 
 from __future__ import annotations
+
 import re
 from html.parser import HTMLParser
-
 
 # ---------------------------------------------------------------------------
 # HTML → プレーンテキスト変換

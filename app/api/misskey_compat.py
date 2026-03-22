@@ -11,18 +11,22 @@ Authorization: Bearer ヘッダーのどちらでも受け付ける。
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, Request, HTTPException
-from app.core.config import settings
-from app.db.database import get_db
-from app.db import crud
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.services.misskey_client import MisskeyClient
+
+from app.core.config import settings
+from app.db import crud
+from app.db.database import get_db
 from app.services.mastodon_client import MastodonClient
-from app.services.user_converter import (
-    masto_to_misskey_user_lite,
-    masto_to_misskey_user_detailed,
+from app.services.misskey_client import MisskeyClient
+from app.services.note_converter import (
+    masto_status_to_mk_note,
+    masto_statuses_to_mk_notes,
 )
-from app.services.note_converter import masto_status_to_mk_note, masto_statuses_to_mk_notes
+from app.services.user_converter import (
+    masto_to_misskey_user_detailed,
+    masto_to_misskey_user_lite,
+)
 
 router = APIRouter(prefix="/api", tags=["misskey-compat"])
 
@@ -78,6 +82,7 @@ async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
         if api_key_obj is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked token")
         from sqlalchemy import select as _sel
+
         from app.db.models import User as _User
         user_result = await db.execute(_sel(_User).where(_User.id == api_key_obj.user_id))
         user = user_result.scalar_one_or_none()
@@ -139,7 +144,6 @@ async def api_meta(request: Request):
         pass
 
     host = settings.MASTODON_INSTANCE_URL.rstrip("/")
-    host_bare = host.replace("https://", "").replace("http://", "")
 
     # policies: 上流の値をベースに antennaLimit だけ 0 に上書き（仕様通り）
     upstream_policies: dict = upstream.get("policies") or {}
@@ -763,6 +767,7 @@ async def api_miauth_check(
 
     # セッションに紐付いたOAuthTokenを取得
     from sqlalchemy import select as sa_select
+
     from app.db.models import OAuthToken
     result = await db.execute(
         sa_select(OAuthToken).where(
@@ -780,7 +785,6 @@ async def api_miauth_check(
         return {"ok": False}
 
     # Misskey互換のuserオブジェクトを構築
-    instance_host = (user.mastodon_instance or settings.MASTODON_INSTANCE_URL).replace("https://", "").rstrip("/")
     return {
         "ok": True,
         "token": token.access_token,

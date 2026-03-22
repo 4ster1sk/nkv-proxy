@@ -11,15 +11,21 @@ SQLAlchemy ORM モデル。
 """
 
 from __future__ import annotations
-import secrets
+
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, ForeignKey,
-    Integer, String, Text, UniqueConstraint,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.db.database import Base
 
 

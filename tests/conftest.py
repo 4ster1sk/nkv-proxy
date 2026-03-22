@@ -1,18 +1,22 @@
-import os
-import pytest
 import asyncio
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+import os
 import sys
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.db import (
+    crud,
+    models,  # noqa: F401
+)
 from app.db.database import Base, get_db
-from app.db import models  # noqa: F401
-from app.db import crud
 
 _test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 _TestSession = async_sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)

@@ -5,18 +5,22 @@ admin_restricted フラグが True のトークンで /api/admin/* を叩くと 
 他のエンドポイントは通常通り動作することを確認する。
 """
 
+import asyncio
 import os
+from unittest.mock import AsyncMock, patch
+
 import pytest
 import pytest_asyncio
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.db import (
+    crud,
+    models,  # noqa
+)
 from app.db.database import Base, get_db
-from app.db import models  # noqa
-from app.db import crud
 from app.db.models import OAuthToken
 
 _test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -46,6 +50,7 @@ async def setup_db():
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
+
     from app.main import app
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:
@@ -152,7 +157,7 @@ class TestAdminRestriction:
             "password": "password123",
             "password_confirm": "password123",
         })
-        login_resp = client.post("/login", data={
+        client.post("/login", data={
             "username": "toggle_user_dash", "password": "password123",
         }, follow_redirects=False)
         # Cookie はクライアントに自動セットされる

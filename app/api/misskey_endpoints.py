@@ -12,8 +12,9 @@ Misskey /api/endpoints — 完全互換実装
 転送に失敗した場合のみこのハードコードリストをフォールバックとして使う。
 """
 
-from fastapi import APIRouter, Request
 import httpx
+from fastapi import APIRouter, Request
+
 from app.core.config import settings
 
 router = APIRouter(prefix="/api", tags=["misskey-endpoints"])

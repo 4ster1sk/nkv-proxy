@@ -1,6 +1,7 @@
 """Simulate Miria's exact API calls against nkv-proxy."""
 import json
 import sys
+
 import requests
 
 token = sys.argv[1] if len(sys.argv) > 1 else ""

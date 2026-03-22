@@ -4,7 +4,8 @@ Mastodon ステータス → Misskey ノート変換
 Mastodon の status オブジェクトを Misskey の Note 形式に変換する。
 """
 from __future__ import annotations
-from app.services.user_converter import masto_to_misskey_user_lite, html_to_text
+
+from app.services.user_converter import html_to_text, masto_to_misskey_user_lite
 
 
 def masto_status_to_mk_note(status: dict) -> dict:

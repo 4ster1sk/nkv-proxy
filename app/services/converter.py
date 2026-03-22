@@ -7,9 +7,9 @@ Emoji reaction mapping follows Fedibird's convention:
 """
 
 from __future__ import annotations
-from typing import Any
-import re
 
+import re
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Emoji / Reaction helpers (Fedibird style)
@@ -284,7 +284,6 @@ def _convert_files(files: list[dict]) -> list[dict]:
 
 
 def _convert_mentions(mentions: list, instance_url: str) -> list[dict]:
-    host = _extract_host(instance_url)
     result = []
     for m in mentions:
         username = m if isinstance(m, str) else m.get("username", "")

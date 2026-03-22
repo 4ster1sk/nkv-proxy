@@ -1,8 +1,9 @@
 """Tests for Mastodon API endpoints."""
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch, MagicMock
-from tests.conftest import SAMPLE_USER, SAMPLE_NOTE, SAMPLE_NOTIFICATION
+
+from tests.conftest import SAMPLE_NOTE, SAMPLE_NOTIFICATION, SAMPLE_USER
 
 INSTANCE_URL = "https://misskey.example.com"
 
