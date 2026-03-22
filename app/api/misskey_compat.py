@@ -11,9 +11,18 @@ Authorization: Bearer ヘッダーのどちらでも受け付ける。
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
 from app.core.config import settings
+from app.db.database import get_db
+from app.db import crud
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.misskey_client import MisskeyClient
+from app.services.mastodon_client import MastodonClient
+from app.services.user_converter import (
+    masto_to_misskey_user_lite,
+    masto_to_misskey_user_detailed,
+)
+from app.services.note_converter import masto_status_to_mk_note, masto_statuses_to_mk_notes
 
 router = APIRouter(prefix="/api", tags=["misskey-compat"])
 
@@ -21,6 +30,7 @@ router = APIRouter(prefix="/api", tags=["misskey-compat"])
 # ---------------------------------------------------------------------------
 # ヘルパー
 # ---------------------------------------------------------------------------
+
 
 async def _body(request: Request) -> dict:
     try:
@@ -38,7 +48,25 @@ def _token(body: dict, request: Request) -> str | None:
     return None
 
 
-def _client(token: str) -> MisskeyClient:
+async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
+    """
+    access_token → User → MastodonClient を返す。
+    Mastodon未連携の場合は空トークンでクライアントを生成（呼び出し側でエラーになる）。
+    """
+    result = await crud.get_token_with_user(db, token)
+    if result is None:
+        raise HTTPException(status_code=401, detail="Invalid or revoked token")
+    _, user = result
+    if not user.mastodon_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Mastodon連携が未設定です。ダッシュボードで連携してください。"
+        )
+    return MastodonClient(user.mastodon_token, user.mastodon_instance)
+
+
+def _mk_client(token: str) -> MisskeyClient:
+    """旧来のMisskeyClientが必要なエンドポイント用（将来的に削除予定）"""
     return MisskeyClient(token)
 
 
@@ -281,31 +309,47 @@ async def api_emojis(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/i")
-async def api_i(request: Request):
+async def api_i(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Misskey の /api/i 互換エンドポイント。
+    Mastodon の GET /api/v1/accounts/verify_credentials に変換して返す。
+    """
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).get_i()
+
+    # DBからユーザー取得（twoFactorEnabled等の補完用）
+    result = await crud.get_token_with_user(db, token)
+    db_user = result[1] if result else None
+
+    mk_client = await _mastodon_client(token, db)
+    masto_user = await mk_client.verify_credentials()
+    return masto_to_misskey_user_detailed(masto_user, db_user=db_user, is_me=True)
 
 
 @router.post("/i/update")
-async def api_i_update(request: Request):
+async def api_i_update(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    mk_client = await _mastodon_client(token, db)
     payload = {k: v for k, v in body.items() if k != "i"}
-    return await _client(token).update_i(**payload)
+    masto_user = await mk_client.update_credentials(**payload)
+    result = await crud.get_token_with_user(db, token)
+    db_user = result[1] if result else None
+    return masto_to_misskey_user_detailed(masto_user, db_user=db_user, is_me=True)
 
 
 @router.post("/i/notifications")
-async def api_i_notifications(request: Request):
+async def api_i_notifications(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).get_notifications(
+    mk_client = await _mastodon_client(token, db)
+    return await mk_client.get_notifications(
         limit=body.get("limit", 20),
         since_id=body.get("sinceId"),
         max_id=body.get("untilId"),
@@ -322,7 +366,7 @@ async def api_notifications_mark_all_read(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).clear_notifications()
+    return await _mk_client(token).clear_notifications()
 
 
 # ---------------------------------------------------------------------------
@@ -330,96 +374,126 @@ async def api_notifications_mark_all_read(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/notes/timeline")
-async def api_notes_timeline(request: Request):
+async def api_notes_timeline(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).notes_timeline(
+    mk = await _mastodon_client(token, db)
+    statuses = await mk.home_timeline(
         limit=body.get("limit", 20),
         since_id=body.get("sinceId"),
         max_id=body.get("untilId"),
     )
+    return masto_statuses_to_mk_notes(statuses)
 
 
 @router.post("/notes/local-timeline")
-async def api_notes_local_timeline(request: Request):
+async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").notes_local_timeline(
+    mk = await _mastodon_client(token or "", db) if token else None
+    if mk is None:
+        return []
+    statuses = await mk.public_timeline(
+        local=True,
         limit=body.get("limit", 20),
         since_id=body.get("sinceId"),
         max_id=body.get("untilId"),
     )
+    return masto_statuses_to_mk_notes(statuses)
 
 
 @router.post("/notes/global-timeline")
-async def api_notes_global_timeline(request: Request):
+async def api_notes_global_timeline(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").notes_global_timeline(
+    mk = await _mastodon_client(token or "", db) if token else None
+    if mk is None:
+        return []
+    statuses = await mk.public_timeline(
         limit=body.get("limit", 20),
         since_id=body.get("sinceId"),
         max_id=body.get("untilId"),
     )
+    return masto_statuses_to_mk_notes(statuses)
 
 
 @router.post("/notes/create")
-async def api_notes_create(request: Request):
+async def api_notes_create(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).create_note(
-        text=body.get("text"),
-        cw=body.get("cw"),
-        visibility=body.get("visibility", "public"),
-        reply_id=body.get("replyId"),
-        renote_id=body.get("renoteId"),
-        file_ids=body.get("fileIds"),
+    mk = await _mastodon_client(token, db)
+    # visibility: Misskey → Mastodon
+    vis = {"public": "public", "home": "unlisted", "followers": "private", "specified": "direct"}.get(
+        body.get("visibility", "public"), "public"
+    )
+    status = await mk.create_status(
+        status=body.get("text", ""),
+        spoiler_text=body.get("cw"),
+        visibility=vis,
+        in_reply_to_id=body.get("replyId"),
+        media_ids=body.get("fileIds"),
         poll=body.get("poll"),
     )
+    return {"createdNote": masto_status_to_mk_note(status)}
 
 
 @router.post("/notes/delete")
-async def api_notes_delete(request: Request):
+async def api_notes_delete(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).delete_note(body["noteId"])
+    mk = await _mastodon_client(token, db)
+    await mk.delete_status(body["noteId"])
+    return {}
 
 
 @router.post("/notes/show")
-async def api_notes_show(request: Request):
+async def api_notes_show(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").get_note(body["noteId"])
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    status = await mk.get_status(body["noteId"])
+    return masto_status_to_mk_note(status)
 
 
 @router.post("/notes/renotes")
-async def api_notes_renotes(request: Request):
+async def api_notes_renotes(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    mk = _client(token or "")
-    return await mk._post("notes/renotes", noteId=body["noteId"], limit=body.get("limit", 10))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    context = await mk.get_context(body["noteId"])
+    return masto_statuses_to_mk_notes(context.get("descendants", []))
 
 
 @router.post("/notes/replies")
-async def api_notes_replies(request: Request):
+async def api_notes_replies(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    mk = _client(token or "")
-    return await mk._post("notes/children", noteId=body["noteId"], limit=body.get("limit", 20))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    context = await mk.get_context(body["noteId"])
+    return masto_statuses_to_mk_notes(context.get("descendants", []))
 
 
 @router.post("/notes/search")
-async def api_notes_search(request: Request):
+async def api_notes_search(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").search_notes(
-        body.get("query", ""), limit=body.get("limit", 20)
-    )
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    result = await mk.search(body.get("query", ""), type="statuses", limit=body.get("limit", 20))
+    return masto_statuses_to_mk_notes(result.get("statuses", []))
 
 
 # ---------------------------------------------------------------------------
@@ -427,46 +501,71 @@ async def api_notes_search(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/notes/reactions/create")
-async def api_reactions_create(request: Request):
+async def api_reactions_create(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).create_reaction(body["noteId"], body.get("reaction", "❤"))
+    mk = await _mastodon_client(token, db)
+    reaction = body.get("reaction", "❤").strip(":")
+    # 絵文字リアクション（Fedibird拡張）または favourite にフォールバック
+    try:
+        status = await mk.add_emoji_reaction(body["noteId"], reaction)
+    except Exception:
+        status = await mk.favourite(body["noteId"])
+    return masto_status_to_mk_note(status)
 
 
 @router.post("/notes/reactions/delete")
-async def api_reactions_delete(request: Request):
+async def api_reactions_delete(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).delete_reaction(body["noteId"])
+    mk = await _mastodon_client(token, db)
+    reaction = body.get("reaction", "❤").strip(":")
+    try:
+        status = await mk.remove_emoji_reaction(body["noteId"], reaction)
+    except Exception:
+        status = await mk.unfavourite(body["noteId"])
+    return masto_status_to_mk_note(status)
 
 
 @router.post("/notes/reactions")
-async def api_reactions_list(request: Request):
+async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").note_reactions(body["noteId"])
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    # Mastodon には reactions 一覧エンドポイントなし → favourited_by で代替
+    accounts = await mk._get(f"statuses/{body['noteId']}/favourited_by")
+    return [
+        {"id": a.get("id"), "reaction": "❤", "user": masto_to_misskey_user_lite(a)}
+        for a in (accounts if isinstance(accounts, list) else [])
+    ]
 
 
 @router.post("/notes/favorites/create")
-async def api_favorites_create(request: Request):
+async def api_favorites_create(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).bookmark(body["noteId"])
+    mk = await _mastodon_client(token, db)
+    status = await mk.bookmark(body["noteId"])
+    return masto_status_to_mk_note(status)
 
 
 @router.post("/notes/favorites/delete")
-async def api_favorites_delete(request: Request):
+async def api_favorites_delete(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).unbookmark(body["noteId"])
+    mk = await _mastodon_client(token, db)
+    status = await mk.unbookmark(body["noteId"])
+    return masto_status_to_mk_note(status)
 
 
 # ---------------------------------------------------------------------------
@@ -474,41 +573,64 @@ async def api_favorites_delete(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/users/show")
-async def api_users_show(request: Request):
+async def api_users_show(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    mk = _client(token or "")
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
     if "userId" in body:
-        return await mk.get_user(body["userId"])
-    return await mk.get_user_by_username(body.get("username", ""), host=body.get("host"))
+        account = await mk.get_account(body["userId"])
+    else:
+        results = await mk.search_accounts(body.get("username", ""), limit=1)
+        account = results[0] if results else {}
+    return masto_to_misskey_user_detailed(account)
 
 
 @router.post("/users/search")
-async def api_users_search(request: Request):
+async def api_users_search(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").search_users(body.get("query", ""), limit=body.get("limit", 20))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    accounts = await mk.search_accounts(body.get("query", ""), limit=body.get("limit", 20))
+    return [masto_to_misskey_user_detailed(a) for a in accounts]
 
 
 @router.post("/users/followers")
-async def api_users_followers(request: Request):
+async def api_users_followers(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").get_followers(body["userId"], limit=body.get("limit", 40))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    accounts = await mk.get_followers(body["userId"], limit=body.get("limit", 40))
+    return [{"id": a.get("id"), "followee": masto_to_misskey_user_detailed(a), "follower": None}
+            for a in (accounts if isinstance(accounts, list) else [])]
 
 
 @router.post("/users/following")
-async def api_users_following(request: Request):
+async def api_users_following(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").get_following(body["userId"], limit=body.get("limit", 40))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    accounts = await mk.get_following(body["userId"], limit=body.get("limit", 40))
+    return [{"id": a.get("id"), "followee": masto_to_misskey_user_detailed(a), "follower": None}
+            for a in (accounts if isinstance(accounts, list) else [])]
 
 
 @router.post("/users/notes")
-async def api_users_notes(request: Request):
+async def api_users_notes(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    return await _client(token or "").get_user_notes(body["userId"], limit=body.get("limit", 20))
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    statuses = await mk.get_account_statuses(body["userId"], limit=body.get("limit", 20))
+    return masto_statuses_to_mk_notes(statuses)
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +643,7 @@ async def api_following_create(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).follow(body["userId"])
+    return await _mk_client(token).follow(body["userId"])
 
 
 @router.post("/following/delete")
@@ -530,7 +652,7 @@ async def api_following_delete(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).unfollow(body["userId"])
+    return await _mk_client(token).unfollow(body["userId"])
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +665,7 @@ async def api_blocking_create(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).block(body["userId"])
+    return await _mk_client(token).block(body["userId"])
 
 
 @router.post("/blocking/delete")
@@ -552,7 +674,7 @@ async def api_blocking_delete(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).unblock(body["userId"])
+    return await _mk_client(token).unblock(body["userId"])
 
 
 @router.post("/blocking/list")
@@ -561,7 +683,7 @@ async def api_blocking_list(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).get_blocks(limit=body.get("limit", 40))
+    return await _mk_client(token).get_blocks(limit=body.get("limit", 40))
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +696,7 @@ async def api_muting_create(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).mute(body["userId"])
+    return await _mk_client(token).mute(body["userId"])
 
 
 @router.post("/muting/delete")
@@ -583,7 +705,7 @@ async def api_muting_delete(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).unmute(body["userId"])
+    return await _mk_client(token).unmute(body["userId"])
 
 
 @router.post("/muting/list")
@@ -592,7 +714,7 @@ async def api_muting_list(request: Request):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _client(token).get_mutes(limit=body.get("limit", 40))
+    return await _mk_client(token).get_mutes(limit=body.get("limit", 40))
 
 
 # ---------------------------------------------------------------------------
@@ -600,11 +722,58 @@ async def api_muting_list(request: Request):
 # ---------------------------------------------------------------------------
 
 @router.post("/miauth/{session_id}/check")
-async def api_miauth_check(session_id: str):
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            f"{settings.MASTODON_INSTANCE_URL}/api/miauth/{session_id}/check"
+async def api_miauth_check(
+    session_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    このプロキシ自身が miAuth 発行元のため、
+    上流ではなく DB から session を取得してトークンを返す。
+    Misskey 互換レスポンス: {"ok": true, "token": "...", "user": {...}}
+    """
+    session = await crud.get_miauth_session(db, session_id)
+
+    if session is None or not session.authorized:
+        return {"ok": False}
+
+    # セッションに紐付いたOAuthTokenを取得
+    from sqlalchemy import select as sa_select
+    from app.db.models import OAuthToken
+    result = await db.execute(
+        sa_select(OAuthToken).where(
+            OAuthToken.session_id == session_id,
+            OAuthToken.revoked == False,  # noqa
         )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    )
+    token = result.scalar_one_or_none()
+    if token is None:
+        return {"ok": False}
+
+    # ユーザー情報を取得
+    user = await crud.get_user_by_id(db, session.user_id)
+    if user is None:
+        return {"ok": False}
+
+    # Misskey互換のuserオブジェクトを構築
+    instance_host = (user.mastodon_instance or settings.MASTODON_INSTANCE_URL).replace("https://", "").rstrip("/")
+    return {
+        "ok": True,
+        "token": token.access_token,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "name": user.display_name or user.username,
+            "host": None,
+            "avatarUrl": user.avatar_url,
+            "isBot": user.is_bot,
+            "isLocked": user.is_locked,
+            "description": user.bio or "",
+            "createdAt": user.created_at.isoformat() if user.created_at else "",
+            "followersCount": 0,
+            "followingCount": 0,
+            "notesCount": 0,
+            "emojis": [],
+            "fields": [],
+        },
+    }

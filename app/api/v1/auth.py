@@ -44,62 +44,22 @@ SESSION_COOKIE = "proxy_session"   # access_token を直接 cookie に入れる
 
 
 # ---------------------------------------------------------------------------
-# スタイル
+# ヘルパー関数
 # ---------------------------------------------------------------------------
-def _style() -> str:
-    return """
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-         background:#f0f2f5;min-height:100vh;display:flex;align-items:center;
-         justify-content:center;padding:1rem}
-    .card{background:#fff;border-radius:14px;box-shadow:0 4px 28px rgba(0,0,0,.11);
-          width:100%;max-width:440px;overflow:hidden}
-    .card.wide{max-width:660px}
-    .header{background:linear-gradient(135deg,#6364e0,#9b59b6);color:#fff;padding:1.4rem 1.8rem}
-    .header h1{font-size:1.15rem;font-weight:700}
-    .header p{font-size:.85rem;opacity:.85;margin-top:.25rem}
-    .body{padding:1.5rem 1.8rem}
-    .form-group{margin-bottom:.9rem}
-    label{display:block;font-size:.85rem;font-weight:500;color:#444;margin-bottom:.3rem}
-    input[type=text],input[type=password],input[type=url]{
-      width:100%;padding:.6rem .85rem;border:1.5px solid #d0d5dd;
-      border-radius:8px;font-size:.93rem;outline:none;transition:border .2s}
-    input:focus{border-color:#6364e0}
-    .btn{width:100%;padding:.7rem;background:#6364e0;color:#fff;border:none;
-         border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;
-         transition:background .2s;margin-top:.3rem}
-    .btn:hover{background:#5051c5}
-    .btn-secondary{background:#f0f2f5;color:#444;border:1.5px solid #d0d5dd}
-    .btn-secondary:hover{background:#e4e6ea}
-    .btn-danger{background:#e74c3c}
-    .btn-danger:hover{background:#c0392b}
-    .btn-sm{width:auto;padding:.4rem .9rem;font-size:.85rem}
-    .error{background:#fff0f0;border:1px solid #ffcccc;color:#c0392b;
-           border-radius:8px;padding:.6rem .85rem;margin-bottom:.9rem;font-size:.86rem}
-    .success{background:#f0fff4;border:1px solid #b7ebc9;color:#27ae60;
-             border-radius:8px;padding:.6rem .85rem;margin-bottom:.9rem;font-size:.86rem}
-    .warn{background:#fffbf0;border:1px solid #f5d78e;color:#856404;
-          border-radius:8px;padding:.8rem 1rem;margin-bottom:.9rem;font-size:.88rem}
-    .note{font-size:.76rem;color:#aaa;margin-top:.8rem;text-align:center;line-height:1.5}
-    a{color:#6364e0;text-decoration:none}
-    a:hover{text-decoration:underline}
-    .app-list{list-style:none;margin-top:.5rem}
-    .app-item{display:flex;align-items:center;justify-content:space-between;
-              padding:.6rem .8rem;background:#f8f9fa;border-radius:8px;margin-bottom:.5rem;
-              font-size:.88rem}
-    .app-name{font-weight:600;color:#333}
-    .app-meta{font-size:.78rem;color:#888;margin-top:.15rem}
-    .badge{display:inline-block;background:#e8f4fd;color:#1a6fac;
-           border-radius:12px;padding:.15rem .5rem;font-size:.75rem;font-weight:600}
-    .badge.green{background:#e8fdf0;color:#1a7a3c}
-    .badge.red{background:#fdf0f0;color:#9a1a1a}
-    .section-title{font-size:.8rem;font-weight:700;color:#888;text-transform:uppercase;
-                   letter-spacing:.06em;margin:1.2rem 0 .5rem}
-    hr{border:none;border-top:1px solid #eee;margin:1.2rem 0}
-    """
+
+def _head(title: str = "") -> str:
+    """共通 <head> タグ（外部 CSS/JS を参照）"""
+    prefix = f"{title} — " if title else ""
+    return (
+        '<meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{prefix}{settings.APP_NAME}</title>"
+        '<link rel="stylesheet" href="/static/css/main.css">'
+    )
 
 
 def _proxy_base(request: Request) -> str:
+    """このプロキシ自身の公開URLを返す。"""
     if settings.PROXY_BASE_URL:
         return settings.PROXY_BASE_URL.rstrip("/")
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
@@ -111,11 +71,8 @@ def _proxy_base(request: Request) -> str:
     return f"{proto}://{host}"
 
 
-async def _get_session_user(
-    request: Request,
-    db: AsyncSession,
-):
-    """Cookie の access_token からユーザーを取得。未認証なら None。"""
+async def _get_session_user(request: Request, db: AsyncSession):
+    """Cookie の access_token からユーザーを取得。未認証なら (None, None)。"""
     token_str = request.cookies.get(SESSION_COOKIE)
     if not token_str:
         return None, None
@@ -123,6 +80,20 @@ async def _get_session_user(
     if result is None:
         return None, None
     return result  # (token, user)
+
+
+def _page(title: str, body_html: str, body_class: str = "") -> str:
+    """完全なHTMLページを返す。"""
+    cls = f' class="{body_class}"' if body_class else ""
+    return (
+        "<!DOCTYPE html>"
+        "<html lang='ja'>"
+        f"<head>{_head(title)}</head>"
+        f"<body{cls}>"
+        + body_html
+        + '<script src="/static/js/main.js"></script>'
+        "</body></html>"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +109,7 @@ async def top(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# GET/POST /register  — 新規登録
+# GET /register  — 新規登録ページ
 # ---------------------------------------------------------------------------
 
 @router.get("/register")
@@ -146,22 +117,18 @@ async def register_page(
     error: str = Query(default=""),
     success: str = Query(default=""),
 ):
-    error_html = f'<div class="error">⚠️ {error}</div>' if error else ""
-    success_html = f'<div class="success">✅ {success}</div>' if success else ""
-    html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>新規登録 — {settings.APP_NAME}</title>
-<style>{_style()}</style></head>
-<body><div class="card">
+    from urllib.parse import unquote
+    error_html = f'<div class="alert alert-error">⚠️ {unquote(error)}</div>' if error else ""
+    success_html = f'<div class="alert alert-success">✅ {unquote(success)}</div>' if success else ""
+    body = f"""
+<div class="card">
   <div class="header"><h1>🚀 新規登録</h1><p>{settings.APP_NAME}</p></div>
   <div class="body">
     {error_html}{success_html}
     <form method="post" action="/register">
       <div class="form-group">
         <label>ユーザー名（3〜30文字、英数字・_）</label>
-        <input type="text" name="username" required pattern="[a-zA-Z0-9_]{{3,30}}"
-               placeholder="username">
+        <input type="text" name="username" required pattern="[a-zA-Z0-9_]{{3,30}}" placeholder="username">
       </div>
       <div class="form-group">
         <label>パスワード（8文字以上）</label>
@@ -175,8 +142,8 @@ async def register_page(
     </form>
     <p class="note">すでにアカウントをお持ちの方は <a href="/login">ログイン</a></p>
   </div>
-</div></body></html>"""
-    return HTMLResponse(content=html)
+</div>"""
+    return HTMLResponse(content=_page("新規登録", body))
 
 
 @router.post("/register")
@@ -217,28 +184,24 @@ async def register_submit(
 @router.get("/login")
 async def login_page(
     request: Request,
-    next: str = Query(default=""),       # miAuth session_id
+    next: str = Query(default=""),
     error: str = Query(default=""),
     success: str = Query(default=""),
     db: AsyncSession = Depends(get_db),
 ):
-    # すでにログイン済みなら処理
+    from urllib.parse import unquote
     result = await _get_session_user(request, db)
     if result[0]:
         if next:
             return RedirectResponse(url=f"/login/post-auth?next={next}", status_code=302)
         return RedirectResponse(url="/dashboard", status_code=302)
 
-    error_html = f'<div class="error">⚠️ {error}</div>' if error else ""
-    success_html = f'<div class="success">✅ {success}</div>' if success else ""
+    error_html = f'<div class="alert alert-error">⚠️ {unquote(error)}</div>' if error else ""
+    success_html = f'<div class="alert alert-success">✅ {unquote(success)}</div>' if success else ""
     next_input = f'<input type="hidden" name="next" value="{next}">' if next else ""
 
-    html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ログイン — {settings.APP_NAME}</title>
-<style>{_style()}</style></head>
-<body><div class="card">
+    body = f"""
+<div class="card">
   <div class="header"><h1>🔐 ログイン</h1><p>{settings.APP_NAME}</p></div>
   <div class="body">
     {error_html}{success_html}
@@ -256,8 +219,8 @@ async def login_page(
     </form>
     <p class="note">アカウントをお持ちでない方は <a href="/register">新規登録</a></p>
   </div>
-</div></body></html>"""
-    return HTMLResponse(content=html)
+</div>"""
+    return HTMLResponse(content=_page("ログイン", body))
 
 
 @router.post("/login")
@@ -313,14 +276,10 @@ async def login_2fa_page(
     next: str = Query(default=""),
     error: str = Query(default=""),
 ):
-    error_html = f'<div class="error">⚠️ {error}</div>' if error else ""
+    error_html = f'<div class="alert alert-error">⚠️ {error}</div>' if error else ""
     next_input = f'<input type="hidden" name="next" value="{next}">' if next else ""
-    html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>2段階認証 — {settings.APP_NAME}</title>
-<style>{_style()}</style></head>
-<body><div class="card">
+    body = f"""
+<div class="card">
   <div class="header"><h1>🔑 2段階認証</h1><p>認証アプリのコードを入力してください</p></div>
   <div class="body">
     {error_html}
@@ -335,8 +294,8 @@ async def login_2fa_page(
       <button type="submit" class="btn">確認</button>
     </form>
   </div>
-</div></body></html>"""
-    return HTMLResponse(content=html)
+</div>"""
+    return HTMLResponse(content=_page("2段階認証", body))
 
 
 @router.post("/login/2fa")
@@ -506,7 +465,7 @@ async def dashboard(
     else:
         mastodon_section = f"""
         <p class="section-title">Mastodon連携</p>
-        <div class="warn">
+        <div class="alert alert-warn">
           ⚠️ Mastodonとまだ連携していません。
           アプリからのAPI利用にはMastodon連携が必要です。
         </div>
@@ -520,44 +479,29 @@ async def dashboard(
           <button type="submit" class="btn">Mastodonと連携する</button>
         </form>"""
 
-    warn_html = f'<div class="warn">⚠️ {warn}</div>' if warn else ""
-    success_html = f'<div class="success">✅ {success}</div>' if success else ""
+    warn_html = f'<div class="alert alert-warn">⚠️ {warn}</div>' if warn else ""
+    success_html = f'<div class="alert alert-success">✅ {success}</div>' if success else ""
 
-    html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ダッシュボード — {settings.APP_NAME}</title>
-<style>
-{_style()}
-body{{align-items:flex-start;padding:2rem 1rem}}
-.card.wide{{margin:0 auto}}
-</style></head>
-<body><div class="card wide">
+    body = f"""
+<div class="card wide">
   <div class="header">
     <h1>👋 @{user.username} さん、ようこそ！</h1>
     <p>{settings.APP_NAME} ダッシュボード</p>
   </div>
   <div class="body">
     {warn_html}{success_html}
-
     {mastodon_section}
-
     <hr>
     <p class="section-title">認証済みアプリ</p>
     <ul class="app-list">{app_items}</ul>
-
     <hr>
     <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-      <a href="/settings/2fa">
-        <button class="btn btn-secondary btn-sm">2段階認証設定</button>
-      </a>
-      <a href="/logout">
-        <button class="btn btn-secondary btn-sm">ログアウト</button>
-      </a>
+      <a href="/settings/2fa"><button class="btn btn-secondary btn-sm">2段階認証設定</button></a>
+      <a href="/logout"><button class="btn btn-secondary btn-sm">ログアウト</button></a>
     </div>
   </div>
-</div></body></html>"""
-    return HTMLResponse(content=html)
+</div>"""
+    return HTMLResponse(content=_page("ダッシュボード", body, body_class="dashboard"))
 
 
 # ---------------------------------------------------------------------------
@@ -935,8 +879,8 @@ async def settings_2fa_page(
         return RedirectResponse(url="/login", status_code=302)
     _, user = result
 
-    error_html = f'<div class="error">⚠️ {error}</div>' if error else ""
-    success_html = f'<div class="success">✅ {success}</div>' if success else ""
+    error_html = f'<div class="alert alert-error">⚠️ {error}</div>' if error else ""
+    success_html = f'<div class="alert alert-success">✅ {success}</div>' if success else ""
     token_str = request.cookies.get(SESSION_COOKIE, "")
 
     if user.totp_enabled:
@@ -970,18 +914,14 @@ async def settings_2fa_page(
           <button type="submit" class="btn">2段階認証を有効にする</button>
         </form>"""
 
-    html = f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>2段階認証設定</title>
-<style>{_style()}</style></head>
-<body><div class="card">
+    body = f"""
+<div class="card">
   <div class="header"><h1>🔑 2段階認証設定</h1><p>@{user.username}</p></div>
   <div class="body">{body_html}
     <p class="note" style="margin-top:1rem"><a href="/dashboard">← ダッシュボードに戻る</a></p>
   </div>
-</div></body></html>"""
-    return HTMLResponse(content=html)
+</div>"""
+    return HTMLResponse(content=_page("2段階認証設定", body))
 
 
 @router.post("/settings/2fa/enable")
@@ -1026,23 +966,18 @@ async def settings_2fa_disable(
 # ---------------------------------------------------------------------------
 
 def _done_html(username: str, session_id: str, app_name: str) -> str:
-    return f"""<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>認証完了</title>
-<style>
-  body{{font-family:system-ui,sans-serif;max-width:420px;margin:4rem auto;
-       padding:1.5rem;text-align:center}}
-  h1{{color:#27ae60;font-size:1.4rem}}
-  .code{{background:#f5f5f5;border:1px solid #ddd;border-radius:8px;
-         padding:1rem;margin:1.5rem 0;font-family:monospace;
-         word-break:break-all;user-select:all;font-size:.9rem}}
-  p{{color:#666;font-size:.9rem;line-height:1.6}}
-</style></head>
-<body>
-  <h1>✅ 認証完了</h1>
-  <p>ようこそ、<strong>@{username}</strong> さん！</p>
-  <p>{app_name} へのアクセスを許可しました。<br>以下のコードをアプリに入力してください。</p>
-  <div class="code">{session_id}</div>
-  <p style="color:#aaa;font-size:.8rem">このページは閉じて構いません。</p>
-</body></html>"""
+    body = f"""
+<div class="card">
+  <div class="header"><h1>✅ 認証完了</h1><p>{app_name}</p></div>
+  <div class="body">
+    <p>ようこそ、<strong>@{username}</strong> さん！</p>
+    <p style="margin:.8rem 0;font-size:.9rem;color:var(--text-2);">
+      {app_name} へのアクセスを許可しました。<br>以下のコードをアプリに入力してください。
+    </p>
+    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+                padding:1rem;margin:.8rem 0;font-family:monospace;word-break:break-all;
+                font-size:.9rem;user-select:all">{session_id}</div>
+    <p class="note">このページは閉じて構いません。</p>
+  </div>
+</div>"""
+    return _page("認証完了", body)

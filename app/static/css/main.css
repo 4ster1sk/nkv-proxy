@@ -1,0 +1,191 @@
+/* Misskey-Mastodon Proxy — ライトテーマ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #f4f6fa;
+  --surface:   #ffffff;
+  --surface-2: #f8f9fc;
+  --border:    #e2e6ef;
+  --primary:   #7b47c8;
+  --primary-h: #6335b0;
+  --accent:    #e8a020;
+  --text:      #1a1a2e;
+  --text-2:    #5a5a7a;
+  --text-3:    #9a9ab0;
+  --error-bg:  #fff1f0;
+  --error-bd:  #ffc4be;
+  --error-tx:  #c0392b;
+  --ok-bg:     #f0faf4;
+  --ok-bd:     #b7e8c8;
+  --ok-tx:     #1a7a3c;
+  --warn-bg:   #fffbf0;
+  --warn-bd:   #f5d878;
+  --warn-tx:   #856404;
+  --shadow:    0 2px 12px rgba(60,60,100,.10);
+  --shadow-lg: 0 4px 28px rgba(60,60,100,.14);
+  --radius:    12px;
+  --radius-sm: 8px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+/* ── カード ── */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  width: 100%;
+  max-width: 440px;
+  overflow: hidden;
+}
+.card.wide { max-width: 680px; }
+
+/* ── ヘッダー ── */
+.header {
+  background: var(--primary);
+  color: #fff;
+  padding: 1.25rem 1.75rem;
+  border-bottom: 3px solid var(--accent);
+}
+.header h1 { font-size: 1.1rem; font-weight: 700; }
+.header p  { font-size: .83rem; opacity: .85; margin-top: .2rem; }
+
+/* ── ボディ ── */
+.body { padding: 1.5rem 1.75rem; }
+
+/* ── フォーム ── */
+.form-group { margin-bottom: .85rem; }
+label {
+  display: block;
+  font-size: .83rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: .3rem;
+}
+input[type=text], input[type=password], input[type=url] {
+  width: 100%;
+  padding: .6rem .85rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: .93rem;
+  outline: none;
+  transition: border .2s, box-shadow .2s;
+  background: var(--surface);
+  color: var(--text);
+}
+input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(123,71,200,.12);
+}
+input::placeholder { color: var(--text-3); }
+
+/* ── ボタン ── */
+.btn {
+  width: 100%;
+  padding: .65rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: .93rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s, box-shadow .2s;
+  margin-top: .25rem;
+}
+.btn:hover { background: var(--primary-h); box-shadow: 0 2px 8px rgba(123,71,200,.25); }
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); box-shadow: none; }
+.btn-danger { background: #e74c3c; }
+.btn-danger:hover { background: #c0392b; }
+.btn-sm { width: auto; padding: .35rem .85rem; font-size: .83rem; }
+
+/* ── アラート ── */
+.alert {
+  border-radius: var(--radius-sm);
+  padding: .65rem .9rem;
+  margin-bottom: .9rem;
+  font-size: .85rem;
+}
+.alert-error  { background: var(--error-bg); border: 1px solid var(--error-bd); color: var(--error-tx); }
+.alert-success{ background: var(--ok-bg);    border: 1px solid var(--ok-bd);    color: var(--ok-tx); }
+.alert-warn   { background: var(--warn-bg);  border: 1px solid var(--warn-bd);  color: var(--warn-tx); }
+
+/* ── ノート ── */
+.note { font-size: .76rem; color: var(--text-3); margin-top: .75rem; text-align: center; line-height: 1.5; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { color: var(--primary-h); text-decoration: underline; }
+
+/* ── セクションタイトル ── */
+.section-title {
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin: 1.1rem 0 .45rem;
+}
+hr { border: none; border-top: 1px solid var(--border); margin: 1.1rem 0; }
+
+/* ── バッジ ── */
+.badge {
+  display: inline-block;
+  background: #ede9f8;
+  color: var(--primary);
+  border-radius: 20px;
+  padding: .15rem .55rem;
+  font-size: .73rem;
+  font-weight: 600;
+}
+.badge-green { background: #e8faf0; color: #1a7a3c; }
+.badge-red   { background: #fff0f0; color: #c0392b; }
+
+/* ── アプリリスト ── */
+.app-list { list-style: none; }
+.app-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .6rem .85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: .45rem;
+  font-size: .86rem;
+}
+.app-name { font-weight: 600; color: var(--text); }
+.app-meta { font-size: .76rem; color: var(--text-3); margin-top: .1rem; }
+
+/* ── Mastodon連携ステータス ── */
+.mastodon-connected {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .6rem .85rem;
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-bd);
+  border-radius: var(--radius-sm);
+  margin-bottom: .5rem;
+  font-size: .88rem;
+}
+
+/* ── ダッシュボードレイアウト ── */
+body.dashboard {
+  align-items: flex-start;
+  padding: 2rem 1rem;
+}
