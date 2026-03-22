@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  MISSKEY_INSTANCE_URL: "https://misskey.io"
+  MASTODON_INSTANCE_URL: "https://mastodon.social"
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ jobs:
           docker run -d \
             --name proxy-ci \
             -p 8000:8000 \
-            -e MISSKEY_INSTANCE_URL=https://misskey.io \
+            -e MASTODON_INSTANCE_URL=https://mastodon.social \
             misskey-mastodon-proxy:ci
           # ヘルスチェックが通るまで待機（最大 30 秒）
           for i in $(seq 1 15); do
@@ -192,7 +192,7 @@ jobs:
     name: Security Scan (Trivy)
     runs-on: ubuntu-latest
     needs: docker-build
-    # main / develop のみ。PR では情報収集のみ（fail しない）
+    # master / develop のみ。PR では情報収集のみ（fail しない）
     if: always()
 
     steps:
@@ -239,7 +239,7 @@ jobs:
           sarif_file: trivy-results.sarif
 
 # ─────────────────────────────────────────
-# 5. Docker Build & Push to GHCR (main のみ)
+# 5. Docker Build & Push to GHCR (master のみ)
 # ─────────────────────────────────────────
   docker-push:
     name: Docker Push (GHCR)

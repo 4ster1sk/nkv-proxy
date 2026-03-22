@@ -2,7 +2,7 @@
 # Misskey-Mastodon Proxy — docker-compose
 #
 # 使い方:
-#   cp .env.example .env    # .env を編集してから
+#   cp .env.example .env    # 編集後
 #   docker compose up -d
 # ============================================================
 
@@ -30,24 +30,23 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
+
   # ─── メインプロキシ ───────────────────────────────────────
   proxy:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime          # マルチステージの runtime ステージ
+      target: runtime
     image: misskey-mastodon-proxy:latest
     container_name: misskey-mastodon-proxy
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-
     ports:
       - "${LISTEN_PORT:-8000}:8000"
-
     environment:
-      MISSKEY_INSTANCE_URL: "${MISSKEY_INSTANCE_URL:-https://misskey.io}"
+      MASTODON_INSTANCE_URL: "${MASTODON_INSTANCE_URL:-https://mastodon.social}"
       APP_NAME: "${APP_NAME:-Misskey-Mastodon-Proxy}"
       APP_CALLBACK_URL: "${APP_CALLBACK_URL:-}"
       PROXY_BASE_URL: "${PROXY_BASE_URL:-}"
@@ -74,28 +73,22 @@ services:
         reservations:
           memory: 64M
 
-
-  # ─── リバースプロキシ (Nginx) ─────────────────────────────
-  # HTTPS 終端・WebSocket プロキシが必要な場合に使用
-  # 不要な場合は profiles: [nginx] のまま起動しなければ OK
+  # ─── Nginx (オプション) ───────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
     container_name: misskey-mastodon-nginx
     restart: unless-stopped
-    #profiles:
-    #  - nginx                  # docker compose --profile nginx up で有効化
+    profiles:
+      - nginx
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       proxy:
         condition: service_healthy
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro     # TLS証明書を配置
-    #depends_on:
-    #  proxy:
-    #    condition: service_healthy
     logging:
       driver: "json-file"
       options:

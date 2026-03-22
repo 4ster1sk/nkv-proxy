@@ -119,8 +119,11 @@ class MastodonClient:
         return await self._get(f"statuses/{status_id}")  # type: ignore
 
     async def create_status(self, **kwargs) -> dict:
-        clean = {k: v for k, v in kwargs.items() if v is not None}
-        return await self._post("statuses", json=clean)  # type: ignore
+        # None の値は除去（Mastodon が 422 を返すため）
+        payload = {k: v for k, v in kwargs.items() if v is not None}
+        # 空リストも除去（media_ids=[] は不要）
+        payload = {k: v for k, v in payload.items() if v != []}
+        return await self._post("statuses", json=payload)  # type: ignore
 
     async def delete_status(self, status_id: str) -> dict:
         return await self._delete(f"statuses/{status_id}")  # type: ignore

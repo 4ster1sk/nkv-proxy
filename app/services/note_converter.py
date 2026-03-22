@@ -109,12 +109,7 @@ def masto_status_to_mk_note(status: dict) -> dict:
 
     # mentions
     mentions = [
-        {
-            "id": m.get("id", ""),
-            "username": m.get("username", ""),
-            "host": None,
-            "url": m.get("url", ""),
-        }
+        m.get("id", "")
         for m in (status.get("mentions") or [])
     ]
 

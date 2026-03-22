@@ -53,6 +53,49 @@ async def _check_admin_allowed(token: str, db: AsyncSession) -> None:
         )
 
 
+def _mk_follow_relationship(
+    account: dict,
+    viewer_id: str,
+    is_following: bool,
+) -> dict:
+    """
+    Mastodon account → Misskey フォロー/フォロワー関係オブジェクト。
+
+    Mastodon は createdAt や followerId を返さないため:
+    - id        : UUIDv5(viewer_id + account_id) で決定論的に生成
+    - createdAt : account.created_at を近似値として使用
+    - followerId/followeeId : is_following の向きで決定
+    """
+    import uuid as _uuid
+    account_id = account.get("id", "")
+    # 決定論的な UUID を生成（同じペアなら常に同じIDになる）
+    seed = f"{viewer_id}:{account_id}"
+    rel_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, seed))
+    created_at = account.get("created_at", "")
+
+    if is_following:
+        # 自分(viewer) が account をフォロー
+        follower_id = viewer_id
+        followee_id = account_id
+        followee = masto_to_misskey_user_detailed(account)
+        follower = None
+    else:
+        # account が自分(viewer) をフォロー
+        follower_id = account_id
+        followee_id = viewer_id
+        followee = None
+        follower = masto_to_misskey_user_detailed(account)
+
+    return {
+        "id": rel_id,
+        "createdAt": created_at,
+        "followeeId": followee_id,
+        "followerId": follower_id,
+        "followee": followee,
+        "follower": follower,
+    }
+
+
 async def _body(request: Request) -> dict:
     try:
         return await request.json()
@@ -633,9 +676,14 @@ async def api_users_followers(request: Request, db: AsyncSession = Depends(get_d
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
+    # 自分自身の account ID を取得（followeeId に使用）
+    me = await mk.verify_credentials()
+    viewer_id = me.get("id", "")
     accounts = await mk.get_followers(body["userId"], limit=body.get("limit", 40))
-    return [{"id": a.get("id"), "followee": masto_to_misskey_user_detailed(a), "follower": None}
-            for a in (accounts if isinstance(accounts, list) else [])]
+    return [
+        _mk_follow_relationship(a, viewer_id, is_following=False)
+        for a in (accounts if isinstance(accounts, list) else [])
+    ]
 
 
 @router.post("/users/following")
@@ -645,9 +693,14 @@ async def api_users_following(request: Request, db: AsyncSession = Depends(get_d
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
+    # 自分自身の account ID を取得（followerId に使用）
+    me = await mk.verify_credentials()
+    viewer_id = me.get("id", "")
     accounts = await mk.get_following(body["userId"], limit=body.get("limit", 40))
-    return [{"id": a.get("id"), "followee": masto_to_misskey_user_detailed(a), "follower": None}
-            for a in (accounts if isinstance(accounts, list) else [])]
+    return [
+        _mk_follow_relationship(a, viewer_id, is_following=True)
+        for a in (accounts if isinstance(accounts, list) else [])
+    ]
 
 
 @router.post("/users/notes")
