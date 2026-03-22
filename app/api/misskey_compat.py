@@ -20,6 +20,7 @@ from app.db.database import get_db
 from app.services.mastodon_client import MastodonClient
 from app.services.misskey_client import MisskeyClient
 from app.services.note_converter import (
+    _build_reaction_key,
     masto_status_to_mk_note,
     masto_statuses_to_mk_notes,
 )
@@ -609,8 +610,26 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    # Mastodon には reactions 一覧エンドポイントなし → favourited_by で代替
-    accounts = await mk._get(f"statuses/{body['noteId']}/favourited_by")
+    note_id = body.get("noteId", "")
+    # ステータスを取得して emoji_reactions (Fedibird拡張) からリアクション一覧を構築
+    status = await mk.get_status(note_id)
+    fedibird_reactions = status.get("emoji_reactions") or []
+    if fedibird_reactions:
+        result = []
+        for er in fedibird_reactions:
+            rkey, _ = _build_reaction_key(er)
+            if not rkey:
+                continue
+            # account_ids があれば各ユーザーを展開
+            for aid in (er.get("account_ids") or []):
+                result.append({"id": aid, "reaction": rkey, "user": {"id": aid}})
+            if not er.get("account_ids"):
+                # account_ids がない場合はカウント分だけダミーエントリ
+                for _ in range(er.get("count", 0)):
+                    result.append({"id": "", "reaction": rkey, "user": {}})
+        return result
+    # フォールバック: favourited_by
+    accounts = await mk._get(f"statuses/{note_id}/favourited_by")
     return [
         {"id": a.get("id"), "reaction": "❤", "user": masto_to_misskey_user_lite(a)}
         for a in (accounts if isinstance(accounts, list) else [])
