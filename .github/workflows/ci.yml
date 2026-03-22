@@ -133,8 +133,12 @@ jobs:
             fi
           done
 
-      - name: Smoke — GET /
-        run: curl -sf http://localhost:8000/ | grep -q "service"
+      - name: Smoke — GET / (302 redirect to login)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/)
+          [ "$STATUS" = "302" ] || [ "$STATUS" = "200" ] \
+            && echo "OK: GET / returned $STATUS" \
+            || (echo "FAIL: expected 302 or 200, got $STATUS" && exit 1)
 
       - name: Smoke — GET /api/v1/instance
         run: curl -sf http://localhost:8000/api/v1/instance | grep -q "version"
