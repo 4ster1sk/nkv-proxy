@@ -20,12 +20,12 @@ from app.services.note_converter import masto_status_to_mk_note
 logger = logging.getLogger(__name__)
 
 CHANNEL_TO_STREAM: dict[str, str] = {
-    "homeTimeline":   "user",               # /streaming/user
-    "main":           "user/notification",  # /streaming/user/notification (通知専用)
-    "notifications":  "user/notification",  # /streaming/user/notification
-    "localTimeline":  "public/local",       # /streaming/public/local
-    "globalTimeline": "public",             # /streaming/public
-    "hybridTimeline": "public",             # /streaming/public
+    "homeTimeline":   "user",          # /streaming/user (TL + 通知)
+    "main":           "user",          # /streaming/user (通知含む)
+    "notifications":  "user",          # /streaming/user (通知含む)
+    "localTimeline":  "public/local",  # /streaming/public/local
+    "globalTimeline": "public",        # /streaming/public
+    "hybridTimeline": "public",        # /streaming/public
     "messaging":      "",
     "drive":          "",
 }

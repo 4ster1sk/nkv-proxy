@@ -2,3 +2,4 @@ nginx/certs/*
 *.pyc
 .env
 docker-compose.yml
+volumes/
