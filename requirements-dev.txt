@@ -7,3 +7,6 @@ respx==0.21.1
 # In-process PostgreSQL for tests
 pytest-postgresql==6.1.1
 psycopg==3.2.3
+# E2E test dependencies
+beautifulsoup4==4.12.3
+pytest-timeout==2.3.1

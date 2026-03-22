@@ -1,0 +1,144 @@
+services:
+  # ======== Nekonoverse (upstream server) ========
+  nkv-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - e2e
+
+  nkv-valkey:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - e2e
+
+  nkv-nekono3s:
+    image: ghcr.io/nananek/nekono3s:latest
+    environment:
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: changeme-s3
+      S3_STORAGE_PATH: /data
+      S3_REGION: us-east-1
+      S3_XATTR_JCLOUDS_COMPAT: "true"
+    healthcheck:
+      test: python -c "import socket; s=socket.create_connection(('localhost',8080),2); s.close()"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e
+
+  nkv-s3proxy-deliverer:
+    image: ghcr.io/nananek/s3proxy-deliverer:latest
+    environment:
+      STORAGE_ROOT: /data
+    volumes_from:
+      - nkv-nekono3s:ro
+    depends_on:
+      nkv-nekono3s:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  nkv-app:
+    build: ../nekonoverse/backend
+    command: >
+      sh -c "alembic upgrade head &&
+             (python -m app.cli create-admin --username admin --email admin@test.local --password testpassword123 ||
+              python -m app.cli reset-password --username admin --password testpassword123) &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@nkv-postgres:5432/nekonoverse
+      VALKEY_URL: valkey://nkv-valkey:6379/0
+      DOMAIN: localhost
+      SECRET_KEY: e2e-test-secret-key
+      FRONTEND_URL: http://localhost
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      USE_HTTPS: "false"
+      S3_ENDPOINT_URL: http://nkv-nekono3s:8080
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: changeme-s3
+      S3_BUCKET: nekonoverse
+      S3_REGION: us-east-1
+    depends_on:
+      nkv-postgres:
+        condition: service_healthy
+      nkv-valkey:
+        condition: service_healthy
+      nkv-nekono3s:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - e2e
+
+  # ======== nkv-proxy ========
+  proxy-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: proxy_db
+      POSTGRES_USER: proxy
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U proxy
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - e2e
+
+  proxy:
+    build: .
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://proxy:testpass@proxy-postgres:5432/proxy_db
+      MASTODON_INSTANCE_URL: http://nkv-app:8000
+      PROXY_BASE_URL: http://proxy:8000
+    depends_on:
+      proxy-postgres:
+        condition: service_healthy
+      nkv-app:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/streaming/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - e2e
+
+  # ======== Test runner ========
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e-test
+    volumes:
+      - ./tests/e2e:/app/tests/e2e:ro
+    depends_on:
+      proxy:
+        condition: service_healthy
+      nkv-app:
+        condition: service_healthy
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    driver: bridge

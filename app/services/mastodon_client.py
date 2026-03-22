@@ -117,7 +117,8 @@ class MastodonClient:
         return await self._get(f"statuses/{status_id}")  # type: ignore
 
     async def create_status(self, **kwargs) -> dict:
-        return await self._post("statuses", json=kwargs)  # type: ignore
+        clean = {k: v for k, v in kwargs.items() if v is not None}
+        return await self._post("statuses", json=clean)  # type: ignore
 
     async def delete_status(self, status_id: str) -> dict:
         return await self._delete(f"statuses/{status_id}")  # type: ignore
