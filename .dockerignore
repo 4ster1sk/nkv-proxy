@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# テスト・開発用
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# 環境設定（機密情報）
+.env
+*.env.local
+
+# バージョン管理
+.git/
+.gitignore
+
+# エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ドキュメント
+README.md
+docs/
+
+# CI
+.github/
+
+# その他
+*.log
+{app/
+{app

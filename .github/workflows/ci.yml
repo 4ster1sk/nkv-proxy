@@ -1,0 +1,306 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  MISSKEY_INSTANCE_URL: "https://misskey.io"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+# ─────────────────────────────────────────
+# 1. Lint
+# ─────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - run: pip install ruff
+
+      - name: ruff check
+        run: ruff check app/ tests/ --select E,F,W,I --ignore E501
+
+# ─────────────────────────────────────────
+# 2. Unit / integration tests
+# ─────────────────────────────────────────
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run pytest
+        run: pytest tests/ -v --tb=short --color=yes
+
+      - name: Upload test results
+        if: always() && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results-${{ matrix.python-version }}
+          path: .pytest_cache/
+
+# ─────────────────────────────────────────
+# 3. Docker build 検証（push なし・全ブランチ）
+# ─────────────────────────────────────────
+  docker-build:
+    name: Docker Build (validate)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # キャッシュを使ってビルド（push しない）
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          tags: misskey-mastodon-proxy:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # ビルドしたイメージを後続ステップで使えるようにロード
+          load: true
+
+      # ─── コンテナを起動してスモークテスト ──────────────────
+      - name: Start container
+        run: |
+          docker run -d \
+            --name proxy-ci \
+            -p 8000:8000 \
+            -e MISSKEY_INSTANCE_URL=https://misskey.io \
+            misskey-mastodon-proxy:ci
+          # ヘルスチェックが通るまで待機（最大 30 秒）
+          for i in $(seq 1 15); do
+            sleep 2
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' proxy-ci 2>/dev/null || echo "none")
+            echo "Health: $STATUS (attempt $i)"
+            if [ "$STATUS" = "healthy" ] || curl -sf http://localhost:8000/ > /dev/null 2>&1; then
+              echo "Container ready"
+              break
+            fi
+            if [ "$i" = "15" ]; then
+              echo "Timeout waiting for container"
+              docker logs proxy-ci
+              exit 1
+            fi
+          done
+
+      - name: Smoke — GET /
+        run: curl -sf http://localhost:8000/ | grep -q "service"
+
+      - name: Smoke — GET /api/v1/instance
+        run: curl -sf http://localhost:8000/api/v1/instance | grep -q "version"
+
+      - name: Smoke — GET /api/v1/streaming/health
+        run: curl -sf http://localhost:8000/api/v1/streaming/health | grep -q "healthy"
+
+      - name: Smoke — POST /api/v1/apps (app registration)
+        run: |
+          curl -sf -X POST http://localhost:8000/api/v1/apps \
+            -H "Content-Type: application/json" \
+            -d '{"client_name":"CI","redirect_uris":"urn:ietf:wg:oauth:2.0:oob"}' \
+            | grep -q "client_id"
+
+      - name: Smoke — GET /oauth/authorize redirects to miAuth
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://localhost:8000/oauth/authorize?redirect_uri=https://example.com/cb&response_type=code&scope=read")
+          [ "$STATUS" = "307" ] || [ "$STATUS" = "302" ] \
+            && echo "OK: redirect $STATUS" \
+            || (echo "FAIL: expected 302/307, got $STATUS" && exit 1)
+
+      - name: Smoke — Antenna/list creation blocked (403)
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST http://localhost:8000/api/v1/lists \
+            -H "Authorization: Bearer dummy" \
+            -H "Content-Type: application/json" \
+            -d '{"title":"test"}')
+          [ "$STATUS" = "403" ] \
+            && echo "OK: antenna creation blocked (role limit=0)" \
+            || (echo "FAIL: expected 403, got $STATUS" && exit 1)
+
+      - name: Smoke — GET /api/v1/lists returns empty (role limit=0)
+        run: |
+          BODY=$(curl -sf http://localhost:8000/api/v1/lists \
+            -H "Authorization: Bearer dummy")
+          [ "$BODY" = "[]" ] \
+            && echo "OK: empty list" \
+            || (echo "FAIL: expected [], got $BODY" && exit 1)
+
+      - name: Smoke — Fedibird emoji_reaction endpoint exists (PUT)
+        run: |
+          # 認証なしなら 401、エンドポイント自体は存在する（404 にならない）
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PUT http://localhost:8000/api/v1/statuses/dummy/emoji_reactions/%E2%9D%A4)
+          [ "$STATUS" != "404" ] \
+            && echo "OK: emoji_reaction endpoint exists ($STATUS)" \
+            || (echo "FAIL: endpoint not found (404)" && exit 1)
+
+      - name: Smoke — miAuth callback endpoint exists
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "http://localhost:8000/oauth/miauth-callback?session_id=00000000-0000-0000-0000-000000000000")
+          # Misskey への検証リクエストは失敗するが 422 や 500 ではなく 401 が正常
+          [ "$STATUS" = "401" ] \
+            && echo "OK: callback endpoint reachable" \
+            || (echo "NOTE: got $STATUS (may be ok if misskey unreachable)")
+
+      - name: Container logs (always)
+        if: always()
+        run: docker logs proxy-ci 2>&1 | tail -40
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f proxy-ci || true
+
+# ─────────────────────────────────────────
+# 4. Trivy セキュリティスキャン
+# ─────────────────────────────────────────
+  trivy:
+    name: Security Scan (Trivy)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    # main / develop のみ。PR では情報収集のみ（fail しない）
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scan
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: misskey-mastodon-proxy:scan
+          cache-from: type=gha
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: misskey-mastodon-proxy:scan
+          format: table
+          exit-code: '0'          # スキャン結果をログに出すが CI を落とさない
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      # SARIF 形式で GitHub Security タブにも表示
+      - name: Run Trivy (SARIF output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: misskey-mastodon-proxy:scan
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+# ─────────────────────────────────────────
+# 5. Docker Build & Push to GHCR (main のみ)
+# ─────────────────────────────────────────
+  docker-push:
+    name: Docker Push (GHCR)
+    runs-on: ubuntu-latest
+    needs: [docker-build, trivy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
+            type=ref,event=branch
+
+      - name: Build and push (multi-platform)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+# ─────────────────────────────────────────
+# 6. develop ブランチへの PR サマリー通知
+# ─────────────────────────────────────────
+  summary:
+    name: PR Summary
+    runs-on: ubuntu-latest
+    needs: [lint, test, docker-build]
+    if: always() && github.event_name == 'pull_request'
+
+    steps:
+      - name: Write job summary
+        run: |
+          echo "## CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build + Smoke | ${{ needs.docker-build.result }} |" >> $GITHUB_STEP_SUMMARY

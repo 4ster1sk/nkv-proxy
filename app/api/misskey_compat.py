@@ -1,0 +1,610 @@
+"""
+Misskey-compatible API endpoints ( POST /api/... ).
+
+Misskey のネイティブクライアントや連合サーバーが叩くエンドポイントを
+このプロキシ上でも応答できるようにする。
+
+認証トークンはリクエストボディの "i" フィールド、または
+Authorization: Bearer ヘッダーのどちらでも受け付ける。
+"""
+
+from __future__ import annotations
+
+import httpx
+from fastapi import APIRouter, Request, HTTPException
+from app.core.config import settings
+from app.services.misskey_client import MisskeyClient
+
+router = APIRouter(prefix="/api", tags=["misskey-compat"])
+
+
+# ---------------------------------------------------------------------------
+# ヘルパー
+# ---------------------------------------------------------------------------
+
+async def _body(request: Request) -> dict:
+    try:
+        return await request.json()
+    except Exception:
+        return {}
+
+
+def _token(body: dict, request: Request) -> str | None:
+    if body.get("i"):
+        return body["i"]
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return None
+
+
+def _client(token: str) -> MisskeyClient:
+    return MisskeyClient(token)
+
+
+async def _forward(endpoint: str, body: dict) -> dict | list:
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"{settings.MASTODON_INSTANCE_URL}/api/{endpoint}",
+            json=body,
+        )
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    if resp.status_code == 204:
+        return {}
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# /api/meta  — 完全互換実装
+# ---------------------------------------------------------------------------
+
+@router.post("/meta")
+async def api_meta(request: Request):
+    """
+    Misskey 互換の /api/meta。
+    実際の /api/meta レスポンス構造（61フィールド）に完全準拠。
+    上流 Misskey から取得して一部をプロキシ情報で上書きする。
+    上流障害時は最低限のフォールバック値で応答する。
+    """
+    body = await _body(request)
+
+    upstream: dict = {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{settings.MASTODON_INSTANCE_URL}/api/meta",
+                json={"detail": body.get("detail", True)},
+            )
+            if resp.status_code == 200:
+                upstream = resp.json()
+    except Exception:
+        pass
+
+    host = settings.MASTODON_INSTANCE_URL.rstrip("/")
+    host_bare = host.replace("https://", "").replace("http://", "")
+
+    # policies: 上流の値をベースに antennaLimit だけ 0 に上書き（仕様通り）
+    upstream_policies: dict = upstream.get("policies") or {}
+    policies = {
+        "gtlAvailable":              upstream_policies.get("gtlAvailable", False),
+        "ltlAvailable":              upstream_policies.get("ltlAvailable", False),
+        "canPublicNote":             upstream_policies.get("canPublicNote", True),
+        "mentionLimit":              upstream_policies.get("mentionLimit", 20),
+        "canInvite":                 upstream_policies.get("canInvite", False),
+        "inviteLimit":               upstream_policies.get("inviteLimit", 0),
+        "inviteLimitCycle":          upstream_policies.get("inviteLimitCycle", 10080),
+        "inviteExpirationTime":      upstream_policies.get("inviteExpirationTime", 0),
+        "canManageCustomEmojis":     upstream_policies.get("canManageCustomEmojis", False),
+        "canManageAvatarDecorations":upstream_policies.get("canManageAvatarDecorations", False),
+        "canSearchNotes":            upstream_policies.get("canSearchNotes", False),
+        "canSearchUsers":            upstream_policies.get("canSearchUsers", True),
+        "canUseTranslator":          upstream_policies.get("canUseTranslator", False),
+        "canHideAds":                upstream_policies.get("canHideAds", False),
+        "driveCapacityMb":           upstream_policies.get("driveCapacityMb", 500),
+        "maxFileSizeMb":             upstream_policies.get("maxFileSizeMb", 30),
+        "alwaysMarkNsfw":            upstream_policies.get("alwaysMarkNsfw", False),
+        "canUpdateBioMedia":         upstream_policies.get("canUpdateBioMedia", True),
+        "pinLimit":                  upstream_policies.get("pinLimit", 5),
+        # ── アンテナ制限（ロール制限 = 0）──────────────────────
+        "antennaLimit":              0,
+        "antennaNotesLimit":         upstream_policies.get("antennaNotesLimit", 200),
+        # ────────────────────────────────────────────────────────
+        "wordMuteLimit":             upstream_policies.get("wordMuteLimit", 200),
+        "webhookLimit":              upstream_policies.get("webhookLimit", 3),
+        "clipLimit":                 upstream_policies.get("clipLimit", 10),
+        "noteEachClipsLimit":        upstream_policies.get("noteEachClipsLimit", 200),
+        "userListLimit":             upstream_policies.get("userListLimit", 10),
+        "userEachUserListsLimit":    upstream_policies.get("userEachUserListsLimit", 50),
+        "rateLimitFactor":           upstream_policies.get("rateLimitFactor", 1),
+        "avatarDecorationLimit":     upstream_policies.get("avatarDecorationLimit", 1),
+        "canImportAntennas":         upstream_policies.get("canImportAntennas", False),
+        "canImportBlocking":         upstream_policies.get("canImportBlocking", False),
+        "canImportFollowing":        upstream_policies.get("canImportFollowing", False),
+        "canImportMuting":           upstream_policies.get("canImportMuting", False),
+        "canImportUserLists":        upstream_policies.get("canImportUserLists", False),
+        "chatAvailability":          upstream_policies.get("chatAvailability", "available"),
+        "uploadableFileTypes":       upstream_policies.get("uploadableFileTypes", [
+            "text/*", "application/json", "image/*", "video/*", "audio/*",
+        ]),
+        "noteDraftLimit":            upstream_policies.get("noteDraftLimit", 10),
+        "scheduledNoteLimit":        upstream_policies.get("scheduledNoteLimit", 1),
+        "watermarkAvailable":        upstream_policies.get("watermarkAvailable", False),
+        "fileSizeLimit":             upstream_policies.get("fileSizeLimit", 50),
+    }
+
+    # features: Misskey の features 構造に準拠
+    upstream_features: dict = upstream.get("features") or {}
+    features = {
+        "localTimeline":          upstream_features.get("localTimeline", False),
+        "globalTimeline":         upstream_features.get("globalTimeline", False),
+        "registration":           upstream_features.get("registration", False),
+        "emailRequiredForSignup": upstream_features.get("emailRequiredForSignup", False),
+        "hcaptcha":               upstream_features.get("hcaptcha", False),
+        "recaptcha":              upstream_features.get("recaptcha", False),
+        "turnstile":              upstream_features.get("turnstile", False),
+        "objectStorage":          upstream_features.get("objectStorage", False),
+        "serviceWorker":          upstream_features.get("serviceWorker", False),
+        "miauth":                 True,   # このプロキシは常に miAuth 対応
+    }
+
+    # clientOptions
+    upstream_client_opts: dict = upstream.get("clientOptions") or {}
+    client_options = {
+        "entrancePageStyle":        upstream_client_opts.get("entrancePageStyle", "default"),
+        "showTimelineForVisitor":   upstream_client_opts.get("showTimelineForVisitor", False),
+        "showActivitiesForVisitor": upstream_client_opts.get("showActivitiesForVisitor", False),
+    }
+
+    return {
+        # ── 管理者情報 ──────────────────────────────────────────────
+        "maintainerName":               upstream.get("maintainerName"),
+        "maintainerEmail":              upstream.get("maintainerEmail"),
+        # ── バージョン・識別 ─────────────────────────────────────────
+        "version":                      upstream.get("version") or settings.INSTANCE_VERSION,
+        "providesTarball":              upstream.get("providesTarball", False),
+        "name":                         upstream.get("name") or settings.INSTANCE_TITLE,
+        "shortName":                    upstream.get("shortName"),
+        "uri":                          upstream.get("uri") or host,
+        "description":                  upstream.get("description") or settings.INSTANCE_DESCRIPTION,
+        "langs":                        upstream.get("langs") or [],
+        # ── 各種 URL ────────────────────────────────────────────────
+        "tosUrl":                       upstream.get("tosUrl") or "",
+        "repositoryUrl":                upstream.get("repositoryUrl"),
+        "feedbackUrl":                  upstream.get("feedbackUrl"),
+        "impressumUrl":                 upstream.get("impressumUrl") or "",
+        "privacyPolicyUrl":             upstream.get("privacyPolicyUrl") or "",
+        "inquiryUrl":                   upstream.get("inquiryUrl"),
+        # ── 登録・サインアップ制御 ────────────────────────────────────
+        "disableRegistration":          upstream.get("disableRegistration", True),
+        "emailRequiredForSignup":       upstream.get("emailRequiredForSignup", False),
+        # ── Captcha 設定 ────────────────────────────────────────────
+        "enableHcaptcha":               upstream.get("enableHcaptcha", False),
+        "hcaptchaSiteKey":              upstream.get("hcaptchaSiteKey"),
+        "enableMcaptcha":               upstream.get("enableMcaptcha", False),
+        "mcaptchaSiteKey":              upstream.get("mcaptchaSiteKey"),
+        "mcaptchaInstanceUrl":          upstream.get("mcaptchaInstanceUrl"),
+        "enableRecaptcha":              upstream.get("enableRecaptcha", False),
+        "recaptchaSiteKey":             upstream.get("recaptchaSiteKey"),
+        "enableTurnstile":              upstream.get("enableTurnstile", False),
+        "turnstileSiteKey":             upstream.get("turnstileSiteKey"),
+        "enableTestcaptcha":            upstream.get("enableTestcaptcha", False),
+        # ── アナリティクス ───────────────────────────────────────────
+        "googleAnalyticsMeasurementId": upstream.get("googleAnalyticsMeasurementId"),
+        # ── PWA / ServiceWorker ───────────────────────────────────
+        "swPublickey":                  upstream.get("swPublickey"),
+        # ── 外観 ────────────────────────────────────────────────────
+        "themeColor":                   upstream.get("themeColor"),
+        "disableSignup":                upstream.get("disableSignup", True),
+        "serverChartsAuthRequired":     upstream.get("serverChartsAuthRequired", False),
+        "mascotImageUrl":               upstream.get("mascotImageUrl"),
+        "bannerUrl":                    upstream.get("bannerUrl") or "",
+        "infoImageUrl":                 upstream.get("infoImageUrl"),
+        "serverErrorImageUrl":          upstream.get("serverErrorImageUrl"),
+        "notFoundImageUrl":             upstream.get("notFoundImageUrl"),
+        "iconUrl":                      upstream.get("iconUrl"),
+        "backgroundImageUrl":           upstream.get("backgroundImageUrl"),
+        "logoImageUrl":                 upstream.get("logoImageUrl"),
+        # ── ノート設定 ────────────────────────────────────────────
+        "maxNoteTextLength":            upstream.get("maxNoteTextLength", 3000),
+        # ── テーマ ────────────────────────────────────────────────
+        "defaultLightTheme":            upstream.get("defaultLightTheme"),
+        "defaultDarkTheme":             upstream.get("defaultDarkTheme"),
+        # ── クライアント設定 ──────────────────────────────────────
+        "clientOptions":                client_options,
+        # ── 広告 ────────────────────────────────────────────────
+        "ads":                          upstream.get("ads") or [],
+        "notesPerOneAd":                upstream.get("notesPerOneAd", 0),
+        # ── メール・ServiceWorker ────────────────────────────────
+        "enableEmail":                  upstream.get("enableEmail", False),
+        "enableServiceWorker":          upstream.get("enableServiceWorker", False),
+        # ── 翻訳 ────────────────────────────────────────────────
+        "translatorAvailable":          upstream.get("translatorAvailable", False),
+        # ── サーバールール ────────────────────────────────────────
+        "serverRules":                  upstream.get("serverRules") or [],
+        # ── ポリシー（antennaLimit=0 で上書き済み）────────────────
+        "policies":                     policies,
+        # ── Sentry ───────────────────────────────────────────────
+        "sentryForFrontend":            upstream.get("sentryForFrontend"),
+        # ── メディアプロキシ ──────────────────────────────────────
+        "mediaProxy":                   upstream.get("mediaProxy") or f"{host}/proxy",
+        # ── URL プレビュー ────────────────────────────────────────
+        "enableUrlPreview":             upstream.get("enableUrlPreview", True),
+        # ── 検索・連合 ────────────────────────────────────────────
+        "noteSearchableScope":          upstream.get("noteSearchableScope", "local"),
+        "federation":                   upstream.get("federation", "all"),
+        # ── キャッシュ ────────────────────────────────────────────
+        "cacheRemoteFiles":             upstream.get("cacheRemoteFiles", False),
+        "cacheRemoteSensitiveFiles":    upstream.get("cacheRemoteSensitiveFiles", True),
+        # ── セットアップ ──────────────────────────────────────────
+        "requireSetup":                 upstream.get("requireSetup", False),
+        # ── プロキシアカウント ────────────────────────────────────
+        "proxyAccountName":             upstream.get("proxyAccountName"),
+        # ── 機能フラグ ────────────────────────────────────────────
+        "features":                     features,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /api/stats
+# ---------------------------------------------------------------------------
+
+@router.post("/stats")
+async def api_stats(request: Request):
+    body = await _body(request)
+    try:
+        return await _forward("stats", body)
+    except Exception:
+        return {
+            "notesCount": 0,
+            "originalNotesCount": 0,
+            "usersCount": 0,
+            "originalUsersCount": 0,
+            "instances": 0,
+            "driveUsageLocal": 0,
+            "driveUsageRemote": 0,
+        }
+
+
+# ---------------------------------------------------------------------------
+# /api/emojis
+# ---------------------------------------------------------------------------
+
+@router.post("/emojis")
+async def api_emojis(request: Request):
+    body = await _body(request)
+    return await _forward("emojis", body)
+
+
+# ---------------------------------------------------------------------------
+# /api/i
+# ---------------------------------------------------------------------------
+
+@router.post("/i")
+async def api_i(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).get_i()
+
+
+@router.post("/i/update")
+async def api_i_update(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    payload = {k: v for k, v in body.items() if k != "i"}
+    return await _client(token).update_i(**payload)
+
+
+@router.post("/i/notifications")
+async def api_i_notifications(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).get_notifications(
+        limit=body.get("limit", 20),
+        since_id=body.get("sinceId"),
+        max_id=body.get("untilId"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# /api/notifications
+# ---------------------------------------------------------------------------
+
+@router.post("/notifications/mark-all-as-read")
+async def api_notifications_mark_all_read(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).clear_notifications()
+
+
+# ---------------------------------------------------------------------------
+# /api/notes
+# ---------------------------------------------------------------------------
+
+@router.post("/notes/timeline")
+async def api_notes_timeline(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).notes_timeline(
+        limit=body.get("limit", 20),
+        since_id=body.get("sinceId"),
+        max_id=body.get("untilId"),
+    )
+
+
+@router.post("/notes/local-timeline")
+async def api_notes_local_timeline(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").notes_local_timeline(
+        limit=body.get("limit", 20),
+        since_id=body.get("sinceId"),
+        max_id=body.get("untilId"),
+    )
+
+
+@router.post("/notes/global-timeline")
+async def api_notes_global_timeline(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").notes_global_timeline(
+        limit=body.get("limit", 20),
+        since_id=body.get("sinceId"),
+        max_id=body.get("untilId"),
+    )
+
+
+@router.post("/notes/create")
+async def api_notes_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).create_note(
+        text=body.get("text"),
+        cw=body.get("cw"),
+        visibility=body.get("visibility", "public"),
+        reply_id=body.get("replyId"),
+        renote_id=body.get("renoteId"),
+        file_ids=body.get("fileIds"),
+        poll=body.get("poll"),
+    )
+
+
+@router.post("/notes/delete")
+async def api_notes_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).delete_note(body["noteId"])
+
+
+@router.post("/notes/show")
+async def api_notes_show(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").get_note(body["noteId"])
+
+
+@router.post("/notes/renotes")
+async def api_notes_renotes(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    mk = _client(token or "")
+    return await mk._post("notes/renotes", noteId=body["noteId"], limit=body.get("limit", 10))
+
+
+@router.post("/notes/replies")
+async def api_notes_replies(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    mk = _client(token or "")
+    return await mk._post("notes/children", noteId=body["noteId"], limit=body.get("limit", 20))
+
+
+@router.post("/notes/search")
+async def api_notes_search(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").search_notes(
+        body.get("query", ""), limit=body.get("limit", 20)
+    )
+
+
+# ---------------------------------------------------------------------------
+# /api/notes/reactions
+# ---------------------------------------------------------------------------
+
+@router.post("/notes/reactions/create")
+async def api_reactions_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).create_reaction(body["noteId"], body.get("reaction", "❤"))
+
+
+@router.post("/notes/reactions/delete")
+async def api_reactions_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).delete_reaction(body["noteId"])
+
+
+@router.post("/notes/reactions")
+async def api_reactions_list(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").note_reactions(body["noteId"])
+
+
+@router.post("/notes/favorites/create")
+async def api_favorites_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).bookmark(body["noteId"])
+
+
+@router.post("/notes/favorites/delete")
+async def api_favorites_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).unbookmark(body["noteId"])
+
+
+# ---------------------------------------------------------------------------
+# /api/users
+# ---------------------------------------------------------------------------
+
+@router.post("/users/show")
+async def api_users_show(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    mk = _client(token or "")
+    if "userId" in body:
+        return await mk.get_user(body["userId"])
+    return await mk.get_user_by_username(body.get("username", ""), host=body.get("host"))
+
+
+@router.post("/users/search")
+async def api_users_search(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").search_users(body.get("query", ""), limit=body.get("limit", 20))
+
+
+@router.post("/users/followers")
+async def api_users_followers(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").get_followers(body["userId"], limit=body.get("limit", 40))
+
+
+@router.post("/users/following")
+async def api_users_following(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").get_following(body["userId"], limit=body.get("limit", 40))
+
+
+@router.post("/users/notes")
+async def api_users_notes(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    return await _client(token or "").get_user_notes(body["userId"], limit=body.get("limit", 20))
+
+
+# ---------------------------------------------------------------------------
+# /api/following
+# ---------------------------------------------------------------------------
+
+@router.post("/following/create")
+async def api_following_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).follow(body["userId"])
+
+
+@router.post("/following/delete")
+async def api_following_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).unfollow(body["userId"])
+
+
+# ---------------------------------------------------------------------------
+# /api/blocking
+# ---------------------------------------------------------------------------
+
+@router.post("/blocking/create")
+async def api_blocking_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).block(body["userId"])
+
+
+@router.post("/blocking/delete")
+async def api_blocking_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).unblock(body["userId"])
+
+
+@router.post("/blocking/list")
+async def api_blocking_list(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).get_blocks(limit=body.get("limit", 40))
+
+
+# ---------------------------------------------------------------------------
+# /api/muting
+# ---------------------------------------------------------------------------
+
+@router.post("/muting/create")
+async def api_muting_create(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).mute(body["userId"])
+
+
+@router.post("/muting/delete")
+async def api_muting_delete(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).unmute(body["userId"])
+
+
+@router.post("/muting/list")
+async def api_muting_list(request: Request):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    return await _client(token).get_mutes(limit=body.get("limit", 40))
+
+
+# ---------------------------------------------------------------------------
+# /api/miauth/{session}/check
+# ---------------------------------------------------------------------------
+
+@router.post("/miauth/{session_id}/check")
+async def api_miauth_check(session_id: str):
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"{settings.MASTODON_INSTANCE_URL}/api/miauth/{session_id}/check"
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
