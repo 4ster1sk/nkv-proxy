@@ -541,12 +541,24 @@ async def dashboard(
         '<hr>'
         '<p class="section-title">🔑 共通 API キー</p>'
         '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.8rem">'
-        f'<code id="webApiKey" style="background:var(--surface-2);border:1px solid var(--border);'
-        'border-radius:6px;padding:.3rem .7rem;font-size:.82rem;flex:1;word-break:break-all">'
-        f'{web_api_key}</code>'
+        f'<code id="webApiKey" data-key="{web_api_key}" style="background:var(--surface-2);'
+        'border:1px solid var(--border);border-radius:6px;padding:.3rem .7rem;'
+        'font-size:.82rem;flex:1;word-break:break-all;letter-spacing:.05em">••••••••••••••••</code>'
+        '<button type="button" class="btn btn-secondary btn-sm" id="toggleKeyBtn" '
+        'onclick="toggleApiKey()" title="表示/非表示">👁</button>'
         '<form method="post" action="/dashboard/regenerate-api-key" style="margin:0">'
         '<button type="submit" class="btn btn-secondary btn-sm">再生成</button>'
         '</form></div>'
+        '<script>'
+        'let _keyVisible = false;'
+        'function toggleApiKey() {'
+        '  const el = document.getElementById("webApiKey");'
+        '  const btn = document.getElementById("toggleKeyBtn");'
+        '  _keyVisible = !_keyVisible;'
+        '  el.textContent = _keyVisible ? el.dataset.key : "••••••••••••••••";'
+        '  btn.textContent = _keyVisible ? "🙈" : "👁";'
+        '}'
+        '</script>'
         '<hr>'
         '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem">'
         '<a href="/settings/2fa"><button class="btn btn-secondary btn-sm">2段階認証設定</button></a>'
@@ -592,7 +604,7 @@ async def dashboard(
         '<pre id="mastoResult" style="display:none;background:var(--surface-2);border:1px solid var(--border);'
         'border-radius:8px;padding:.8rem;font-size:.78rem;max-height:280px;overflow:auto;white-space:pre-wrap"></pre>'
         """<script>
-    const API_KEY = document.getElementById("webApiKey").textContent.trim();
+    const API_KEY = document.getElementById("webApiKey").dataset.key;
     async function runMk() {
       const pre = document.getElementById("mkResult");
       pre.style.display = "block"; pre.textContent = "送信中...";

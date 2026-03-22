@@ -61,6 +61,25 @@ app.include_router(misskey_compat.router)
 app.include_router(misskey_endpoints.router)
 
 
+from fastapi import WebSocket, Query as WsQuery
+
+@app.websocket("/streaming")
+async def misskey_streaming_ws(
+    websocket: WebSocket,
+    i: str = WsQuery(None),
+    access_token: str = WsQuery(None),
+):
+    """
+    Misskey WebSocket ストリーミングエンドポイント。
+    クライアントは ws://proxy/streaming?i=<token> で接続する。
+    """
+    from app.services.streaming import handle_ws_stream
+    token = i or access_token or ""
+    await handle_ws_stream(
+        websocket, token, "user", settings.MASTODON_INSTANCE_URL
+    )
+
+
 @app.get("/api/v1/apps/verify_credentials")
 async def verify_app():
     return {
