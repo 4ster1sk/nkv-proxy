@@ -72,7 +72,7 @@ def masto_status_to_mk_note(status: dict) -> dict:
 
     # emoji_reactions (Fedibird拡張) があれば取り込む
     for er in (status.get("emoji_reactions") or []):
-        emoji_key = er.get("name", "")
+        emoji_key = er.get("name", "").strip(":")
         if emoji_key:
             reactions[f":{emoji_key}:"] = er.get("count", 0)
 
