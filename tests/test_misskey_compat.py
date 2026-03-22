@@ -550,6 +550,61 @@ class TestMisskeyCompatReactions:
         assert resp.status_code == 200
 
 
+class TestMisskeyCompatNotesCreate:
+    """notes/create の media_ids=None 問題のテスト。"""
+
+    def test_create_note_without_files(self, client: TestClient):
+        """fileIds 未指定（None）でも 422 にならない。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.create_status = AsyncMock(return_value=MASTO_STATUS)
+            resp = client.post("/api/notes/create", json={
+                **AUTH_BODY,
+                "text": "Hello world",
+                "visibility": "public",
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "createdNote" in data
+        assert data["createdNote"] is not None  # テキストはMASTO_STATUSから変換
+
+    def test_create_note_with_cw(self, client: TestClient):
+        """CW付きノートが spoiler_text として送られる。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            instance = MockClient.return_value
+            instance.create_status = AsyncMock(return_value=MASTO_STATUS)
+            resp = client.post("/api/notes/create", json={
+                **AUTH_BODY,
+                "text": "本文",
+                "cw": "CW: 注意",
+            })
+        assert resp.status_code == 200
+        # create_status に spoiler_text が渡されていること
+        call_kwargs = instance.create_status.call_args[1]
+        assert call_kwargs.get("spoiler_text") == "CW: 注意"
+
+    def test_create_note_media_ids_none_not_sent(self, client: TestClient):
+        """fileIds=None のとき media_ids が Mastodon に送られない。"""
+        from app.services.mastodon_client import MastodonClient as RealClient
+        captured = {}
+        original_post = RealClient._post
+
+        async def mock_post(self, path, json=None, data=None):
+            captured["json"] = json
+            return MASTO_STATUS
+
+        with patch.object(RealClient, "_post", mock_post):
+            with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+                instance = MockClient.return_value
+                instance.create_status = AsyncMock(return_value=MASTO_STATUS)
+                resp = client.post("/api/notes/create", json={
+                    **AUTH_BODY, "text": "no files",
+                })
+        assert resp.status_code == 200
+        # create_status が None の media_ids なしで呼ばれていること
+        call_kwargs = instance.create_status.call_args[1]
+        assert call_kwargs.get("media_ids") is None  # 渡されていないか None
+
+
 class TestMisskeyCompatUsers:
     def test_api_users_show_by_id(self, client: TestClient):
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
@@ -572,15 +627,84 @@ class TestMisskeyCompatUsers:
 
     def test_api_users_followers(self, client: TestClient):
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.verify_credentials = AsyncMock(
+                return_value={**MASTO_ACCOUNT, "id": "viewer001"}
+            )
             MockClient.return_value.get_followers = AsyncMock(return_value=[MASTO_ACCOUNT])
             resp = client.post("/api/users/followers", json={**AUTH_BODY, "userId": "user001"})
         assert resp.status_code == 200
 
     def test_api_users_following(self, client: TestClient):
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.verify_credentials = AsyncMock(
+                return_value={**MASTO_ACCOUNT, "id": "viewer001"}
+            )
             MockClient.return_value.get_following = AsyncMock(return_value=[MASTO_ACCOUNT])
             resp = client.post("/api/users/following", json={**AUTH_BODY, "userId": "user001"})
         assert resp.status_code == 200
+
+
+class TestMisskeyCompatFollowRelationship:
+    """following/followers レスポンスに createdAt/followerId/followeeId が含まれる。"""
+
+    def test_following_has_required_fields(self, client: TestClient):
+        """following レスポンスに Misskey 互換フィールドが含まれる。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.verify_credentials = AsyncMock(
+                return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
+            )
+            MockClient.return_value.get_following = AsyncMock(
+                return_value=[MASTO_ACCOUNT]
+            )
+            resp = client.post("/api/users/following", json={**AUTH_BODY, "userId": "user001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        item = data[0]
+        assert "id" in item
+        assert "createdAt" in item
+        assert "followeeId" in item
+        assert "followerId" in item
+        assert "followee" in item
+        # following なので followerId = viewer, followeeId = account
+        assert item["followerId"] == "viewer001"
+        assert item["followeeId"] == "user001"
+        assert item["followee"] is not None
+        assert item["follower"] is None
+
+    def test_followers_has_required_fields(self, client: TestClient):
+        """followers レスポンスに Misskey 互換フィールドが含まれる。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.verify_credentials = AsyncMock(
+                return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
+            )
+            MockClient.return_value.get_followers = AsyncMock(
+                return_value=[MASTO_ACCOUNT]
+            )
+            resp = client.post("/api/users/followers", json={**AUTH_BODY, "userId": "user001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        item = data[0]
+        # followers: account(user001) が viewer(viewer001) をフォローしている
+        # followerId = フォローした側(account), followeeId = フォローされた側(viewer)
+        assert item["followerId"] == "user001"
+        assert item["followeeId"] == "viewer001"
+        assert item["follower"] is not None
+        assert item["followee"] is None
+
+    def test_following_id_is_deterministic(self, client: TestClient):
+        """同じペアなら常に同じ id が生成される。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.verify_credentials = AsyncMock(
+                return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
+            )
+            MockClient.return_value.get_following = AsyncMock(
+                return_value=[MASTO_ACCOUNT]
+            )
+            resp1 = client.post("/api/users/following", json={**AUTH_BODY, "userId": "user001"})
+            resp2 = client.post("/api/users/following", json={**AUTH_BODY, "userId": "user001"})
+        assert resp1.json()[0]["id"] == resp2.json()[0]["id"]
 
 
 class TestMisskeyCompatFollowing:
