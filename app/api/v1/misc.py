@@ -70,7 +70,7 @@ async def get_instance(mk: MastodonClient = Depends(_client)):
         return await mk.get_instance()
     except Exception:
         return {
-            "uri": settings.MASTODON_INSTANCE_URL.replace("https://", "").rstrip("/"),
+            "uri": (settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL).replace("https://", "").rstrip("/"),
             "title": settings.INSTANCE_TITLE,
             "description": settings.INSTANCE_DESCRIPTION,
             "version": settings.INSTANCE_VERSION,

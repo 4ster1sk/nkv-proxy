@@ -20,8 +20,8 @@ def _client(
 @router.get("/accounts/verify_credentials")
 async def verify_credentials(local_user: User = Depends(get_current_user)):
     """ローカルDBのユーザー情報を Mastodon Account 形式で返す。"""
-    avatar = local_user.avatar_url or f"{settings.MASTODON_INSTANCE_URL}/identicon/{local_user.id}"
-    header = local_user.header_url or f"{settings.MASTODON_INSTANCE_URL}/static-assets/transparent.png"
+    avatar = local_user.avatar_url or f"{settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL}/identicon/{local_user.id}"
+    header = local_user.header_url or f"{settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL}/static-assets/transparent.png"
     return {
         "id": local_user.id,
         "username": local_user.username,
@@ -31,7 +31,7 @@ async def verify_credentials(local_user: User = Depends(get_current_user)):
         "bot": local_user.is_bot,
         "created_at": local_user.created_at.isoformat(),
         "note": local_user.bio or "",
-        "url": f"{settings.MASTODON_INSTANCE_URL}/@{local_user.username}",
+        "url": f"{settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL}/@{local_user.username}",
         "avatar": avatar,
         "avatar_static": avatar,
         "header": header,

@@ -8,7 +8,7 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  MISSKEY_INSTANCE_URL: "https://misskey.io"
+  MASTODON_INSTANCE_URL: "https://mastodon.social"
   IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ jobs:
           docker run -d \
             --name proxy-ci \
             -p 8000:8000 \
-            -e MISSKEY_INSTANCE_URL=https://misskey.io \
+            -e MASTODON_INSTANCE_URL=https://mastodon.social \
             misskey-mastodon-proxy:ci
           # ヘルスチェックが通るまで待機（最大 30 秒）
           for i in $(seq 1 15); do
