@@ -1,5 +1,4 @@
 nginx/certs/*
-nginx/nginx.conf
 *.pyc
 .env
 docker-compose.yml
