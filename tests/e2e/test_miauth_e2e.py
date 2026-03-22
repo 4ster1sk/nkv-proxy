@@ -10,6 +10,7 @@ Flow:
   3. Connect Mastodon (Nekonoverse) via OAuth
   4. MiAuth flow (simulate Misskey client)
   5. POST /api/i to verify user info
+  6. Create note and verify timeline retrieval
 """
 
 import time
@@ -32,7 +33,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_full_miauth_flow(services_ready):
-    """Test complete flow: registration -> OAuth -> MiAuth -> /api/i."""
+    """Test complete flow: registration -> OAuth -> MiAuth -> /api/i -> notes."""
 
     proxy_cookies = httpx.Cookies()
     nkv_cookies = httpx.Cookies()
@@ -268,4 +269,48 @@ async def test_full_miauth_flow(services_ready):
             f"No username in response: {list(user_info.keys())}"
         )
         print(f"[STEP 5] /api/i success: username={user_info.get('username')}")
-        print("\n=== E2E MiAuth flow completed successfully! ===")
+
+        # ==================================================
+        # STEP 6: Create a note via /api/notes/create
+        # ==================================================
+        note_text = f"E2E test note {_TS}"
+        resp = await client.post(
+            f"{PROXY_BASE}/api/notes/create",
+            json={"i": access_token, "text": note_text, "visibility": "public"},
+        )
+        assert resp.status_code == 200, (
+            f"/api/notes/create failed: {resp.status_code} {resp.text[:300]}"
+        )
+        created = resp.json()
+        assert "createdNote" in created, (
+            f"No createdNote in response: {list(created.keys())}"
+        )
+        note = created["createdNote"]
+        note_id = note["id"]
+        assert note["text"] == note_text, (
+            f"Note text mismatch: expected {note_text!r}, got {note['text']!r}"
+        )
+        print(f"[STEP 6] Created note: id={note_id}, text={note_text!r}")
+
+        # ==================================================
+        # STEP 7: Retrieve timeline and verify the note
+        # ==================================================
+        resp = await client.post(
+            f"{PROXY_BASE}/api/notes/timeline",
+            json={"i": access_token, "limit": 10},
+        )
+        assert resp.status_code == 200, (
+            f"/api/notes/timeline failed: {resp.status_code} {resp.text[:300]}"
+        )
+        timeline = resp.json()
+        assert isinstance(timeline, list), (
+            f"Expected list, got {type(timeline).__name__}"
+        )
+        assert len(timeline) > 0, "Timeline is empty"
+        found = any(n["id"] == note_id for n in timeline)
+        assert found, (
+            f"Created note {note_id} not found in timeline. "
+            f"Timeline IDs: {[n['id'] for n in timeline]}"
+        )
+        print(f"[STEP 7] Timeline has {len(timeline)} notes, created note found")
+        print("\n=== E2E MiAuth + Timeline flow completed successfully! ===")
