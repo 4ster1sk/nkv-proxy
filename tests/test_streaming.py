@@ -184,14 +184,14 @@ class TestChannelMapping:
         from app.services.streaming import CHANNEL_TO_STREAM
         # HTL → /streaming/user
         assert CHANNEL_TO_STREAM["homeTimeline"] == "user"
-        # LTL → /streaming/public/local
-        assert CHANNEL_TO_STREAM["localTimeline"] == "public/local"
+        # LTL → /streaming/public (Nekonoverse に /public/local はない)
+        assert CHANNEL_TO_STREAM["localTimeline"] == "public"
         # GTL → /streaming/public
         assert CHANNEL_TO_STREAM["globalTimeline"] == "public"
         assert CHANNEL_TO_STREAM["hybridTimeline"] == "public"
-        # 通知 → /streaming/user/notification
-        assert CHANNEL_TO_STREAM["notifications"] == "user/notification"
-        assert CHANNEL_TO_STREAM["main"] == "user/notification"
+        # 通知 → /streaming/user (通知は user ストリームに統合)
+        assert CHANNEL_TO_STREAM["notifications"] == "user"
+        assert CHANNEL_TO_STREAM["main"] == "user"
 
     def test_stream_url_path_format(self):
         """SSE URLがパスベース形式になっていることを確認する。"""
@@ -210,9 +210,9 @@ class TestChannelMapping:
 
         cases = [
             ("homeTimeline",   f"{instance}/api/v1/streaming/user"),
-            ("main",           f"{instance}/api/v1/streaming/user/notification"),
-            ("notifications",  f"{instance}/api/v1/streaming/user/notification"),
-            ("localTimeline",  f"{instance}/api/v1/streaming/public/local"),
+            ("main",           f"{instance}/api/v1/streaming/user"),
+            ("notifications",  f"{instance}/api/v1/streaming/user"),
+            ("localTimeline",  f"{instance}/api/v1/streaming/public"),
             ("globalTimeline", f"{instance}/api/v1/streaming/public"),
             ("hybridTimeline", f"{instance}/api/v1/streaming/public"),
         ]
