@@ -542,8 +542,37 @@ async def api_notes_renotes(request: Request, db: AsyncSession = Depends(get_db)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    context = await mk.get_context(body["noteId"])
-    return masto_statuses_to_mk_notes(context.get("descendants", []))
+    accounts = await mk.get_reblogged_by(body["noteId"])
+    from datetime import datetime
+    return [
+        {
+            "id": user["id"],
+            "userId": user["id"],
+            "createdAt": datetime.utcnow().isoformat(),
+            "user": user,
+            # ダミーデータをつける
+            "text": None,
+            "cw": None,
+            "visibility": "followers",
+            "localOnly": False,
+            "reactionAcceptance": None,
+            "renoteCount": 0,
+            "repliesCount": 0,
+            "reactionCount": 0,
+            "reactions": {},
+            "reactionEmojis": {},
+            "fileIds": [],
+            "files": [],
+            "replyId": None,
+            "renoteId": None,
+            "renote": None,
+            "clippedCount": 0,
+            "tags": [],
+            "emojis": {},
+            "poll": None,
+        }
+        for user in (masto_to_misskey_user_detailed(a) for a in accounts)
+    ]
 
 
 @router.post("/notes/replies")

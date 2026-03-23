@@ -182,6 +182,12 @@ class MastodonClient:
     async def get_favourites(self, **params) -> list:
         return await self._get("favourites", params=params)  # type: ignore
 
+    # ── Reblogs ─────────────────────────────────────────────────────────
+
+    async def get_reblogged_by(self, status_id: str) -> list:
+        return await self._get(f"statuses/{status_id}/reblogged_by")  # type: ignore
+
+
     # ── Notifications ──────────────────────────────────────────────────
     async def get_notifications(self, **params) -> list:
         return await self._get("notifications", params=params)  # type: ignore
