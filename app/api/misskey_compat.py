@@ -579,8 +579,8 @@ async def api_reactions_create(request: Request, db: AsyncSession = Depends(get_
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    reaction = body.get("reaction", "❤").strip(":")
-    # 絵文字リアクション（Fedibird拡張）または favourite にフォールバック
+    reaction = body.get("reaction", "❤")
+    # Fedibird API は ":shortcode:" 形式をそのまま受け取る（コロンを剥がさない）
     try:
         status = await mk.add_emoji_reaction(body["noteId"], reaction)
     except Exception:
@@ -595,7 +595,7 @@ async def api_reactions_delete(request: Request, db: AsyncSession = Depends(get_
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    reaction = body.get("reaction", "❤").strip(":")
+    reaction = body.get("reaction", "❤")
     try:
         status = await mk.remove_emoji_reaction(body["noteId"], reaction)
     except Exception:

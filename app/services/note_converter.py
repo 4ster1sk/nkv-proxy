@@ -107,7 +107,8 @@ def masto_status_to_mk_note(status: dict) -> dict:
                 continue
             reactions[rkey] = er.get("count", 0)
             if emoji_url:
-                reaction_emojis[rkey] = emoji_url
+                # Misskey の reactionEmojis はコロンなしキー (e.g. "blobcat@remote")
+                reaction_emojis[rkey.strip(":")] = emoji_url
             if er.get("me"):
                 my_reaction = rkey
     elif status.get("favourites_count", 0) > 0:
@@ -178,7 +179,7 @@ def masto_status_to_mk_note(status: dict) -> dict:
         "clippedCount": 0,
         "mentions": mentions,
         "tags": tags,
-        "emojis": [],
+        "emojis": reaction_emojis,
         "poll": poll,
         # Mastodon 側の追加情報
         "uri": status.get("uri"),

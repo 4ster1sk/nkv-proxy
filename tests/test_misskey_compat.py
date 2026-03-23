@@ -849,7 +849,7 @@ class TestNoteConverterReactionEmojis:
         }
         note = masto_status_to_mk_note(status)
         assert note["reactions"] == {":awesome:": 2, "❤": 1}
-        assert note["reactionEmojis"] == {":awesome:": "https://example.com/emoji/awesome.png"}
+        assert note["reactionEmojis"] == {"awesome": "https://example.com/emoji/awesome.png"}
         assert note["reactionCount"] == 3
         assert note["myReaction"] == "❤"
 
@@ -865,7 +865,7 @@ class TestNoteConverterReactionEmojis:
         note = masto_status_to_mk_note(status)
         assert ":blobcat@remote.host:" in note["reactions"]
         assert note["reactions"][":blobcat@remote.host:"] == 1
-        assert note["reactionEmojis"][":blobcat@remote.host:"] == "https://remote.host/emoji/blobcat.png"
+        assert note["reactionEmojis"]["blobcat@remote.host"] == "https://remote.host/emoji/blobcat.png"
         assert note["myReaction"] == ":blobcat@remote.host:"
 
     def test_reaction_emojis_empty_for_unicode_only(self):
