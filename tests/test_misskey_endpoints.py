@@ -1,7 +1,8 @@
 """Tests for Misskey /api/endpoints and /api/endpoint."""
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from app.api.misskey_endpoints import MISSKEY_ENDPOINTS
 
 

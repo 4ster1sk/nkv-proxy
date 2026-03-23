@@ -24,7 +24,7 @@ def main(base_url: str, token: str):
         me = mk.i()
         print(f"  username: {me.username}")
         print(f"  id: {me.id}")
-        print(f"  OK")
+        print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
 
@@ -34,7 +34,7 @@ def main(base_url: str, token: str):
         meta = mk.meta()
         print(f"  name: {meta.name}")
         print(f"  version: {meta.version}")
-        print(f"  OK")
+        print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
 
@@ -47,7 +47,7 @@ def main(base_url: str, token: str):
         note_id = result.created_note.id
         print(f"  note_id: {note_id}")
         print(f"  text: {result.created_note.text}")
-        print(f"  OK")
+        print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
         # Try raw request for more detail
@@ -73,10 +73,10 @@ def main(base_url: str, token: str):
             nid = getattr(note, "id", "?")
             print(f"  [{i}] @{username}: {text} (id={nid})")
         if note_id and any(getattr(n, "id", None) == note_id for n in tl):
-            print(f"  Created note found in timeline!")
+            print("  Created note found in timeline!")
         elif note_id:
-            print(f"  WARNING: Created note NOT found in timeline")
-        print(f"  OK")
+            print("  WARNING: Created note NOT found in timeline")
+        print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
         # Raw request fallback
@@ -108,7 +108,7 @@ def main(base_url: str, token: str):
             username = getattr(user, "username", "?") if user else "?"
             text = (getattr(note, "text", None) or "")[:60]
             print(f"  [{i}] @{username}: {text}")
-        print(f"  OK")
+        print("  OK")
     except Exception as e:
         print(f"  FAIL: {e}")
 
@@ -119,7 +119,7 @@ def main(base_url: str, token: str):
             note = mk.notes_show(note_id=note_id)
             print(f"  id: {note.id}")
             print(f"  text: {note.text}")
-            print(f"  OK")
+            print("  OK")
         except Exception as e:
             print(f"  FAIL: {e}")
 
@@ -129,7 +129,7 @@ def main(base_url: str, token: str):
         try:
             mk.notes_delete(note_id=note_id)
             print(f"  Deleted note {note_id}")
-            print(f"  OK")
+            print("  OK")
         except Exception as e:
             print(f"  FAIL: {e}")
 

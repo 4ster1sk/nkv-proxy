@@ -1,8 +1,9 @@
 """Database CRUD helpers."""
 
 from __future__ import annotations
-import io
+
 import base64
+import io
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -10,15 +11,19 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 import pyotp
 import qrcode
-from sqlalchemy import select, update, delete
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.models import (
-    ApiKey, MastodonApp, MastodonOAuthState, MiAuthSession,
-    OAuthToken, RegisteredApp, User,
+    ApiKey,
+    MastodonApp,
+    MastodonOAuthState,
+    MiAuthSession,
+    OAuthToken,
+    RegisteredApp,
+    User,
 )
-
 
 # ---------------------------------------------------------------------------
 # パスワード / TOTP
@@ -374,6 +379,7 @@ async def set_admin_restricted(
     db: AsyncSession, token_id: int, restricted: bool
 ) -> None:
     from sqlalchemy import update as sa_update
+
     from app.db.models import OAuthToken as OAT
     await db.execute(
         sa_update(OAT).where(OAT.id == token_id).values(admin_restricted=restricted)

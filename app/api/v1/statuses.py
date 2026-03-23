@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query, Request
-from app.core.auth import get_mastodon_token, get_current_user
+
+from app.core.auth import get_current_user, get_mastodon_token
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
-from app.core.config import settings
 
 router = APIRouter(prefix="/api/v1", tags=["statuses"])
 

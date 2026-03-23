@@ -7,6 +7,7 @@ Misskey WebSocket ストリーミング互換レイヤー
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -261,10 +262,11 @@ async def handle_ws_stream(
     extra_params: dict | None = None,
 ) -> None:
     """Misskey WebSocket -> Mastodon SSE 変換のメインエントリ。"""
-    from app.db.database import AsyncSessionLocal
-    from app.db import crud
-    from app.db.models import User
     from sqlalchemy import select
+
+    from app.db import crud
+    from app.db.database import AsyncSessionLocal
+    from app.db.models import User
 
     mastodon_token = ""
     mastodon_instance = instance_url

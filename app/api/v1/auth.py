@@ -24,15 +24,16 @@
 """
 
 import uuid
+
 import httpx
-from fastapi import APIRouter, Cookie, Depends, Form, Query, Request, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.db.database import get_db
 from app.db import crud
+from app.db.database import get_db
 from app.db.models import OAuthToken
 
 router = APIRouter()
@@ -170,7 +171,6 @@ async def register_submit(
     await crud.create_user(db, username=username, password=password)
     await db.commit()
 
-    from urllib.parse import quote
     return RedirectResponse(
         url=f"/login?success={quote('登録完了！ログインしてください')}",
         status_code=302,
@@ -243,8 +243,6 @@ async def login_submit(
 
     # 2FA チェック
     if user.totp_enabled:
-        # 一時セッションとして pending をセッションIDで管理
-        tmp_id = str(uuid.uuid4())
         # 簡易: pending情報をcookieに入れる（本番はDBで管理推奨）
         next_param = f"&next={next}" if next else ""
         resp = RedirectResponse(url=f"/login/2fa?next={next}", status_code=302)
@@ -376,7 +374,7 @@ async def login_post_auth(
         return RedirectResponse(url="/dashboard", status_code=302)
 
     await crud.authorize_miauth_session(db, session_id=next, user_id=user.id)
-    token = await crud.create_oauth_token(
+    await crud.create_oauth_token(
         db, session_id=next, app_id=session.app_id,
         user_id=user.id, scopes=session.scopes,
     )
@@ -688,6 +686,7 @@ async def dashboard_mastodon_disconnect(
     _, user = result
 
     from sqlalchemy import update
+
     from app.db.models import User
     await db.execute(
         update(User).where(User.id == user.id).values(
@@ -860,6 +859,7 @@ async def miauth_entry(
         await db.commit()
     elif name and not session.app_name:
         from sqlalchemy import update as _upd
+
         from app.db.models import MiAuthSession as _MS
         await db.execute(
             _upd(_MS).where(_MS.session_id == session_id)
@@ -924,6 +924,7 @@ async def miauth_deny(
     session = await crud.get_miauth_session(db, session_id)
     if session:
         from sqlalchemy import delete as _del
+
         from app.db.models import MiAuthSession as _MS
         await db.execute(_del(_MS).where(_MS.session_id == session_id))
         await db.commit()
@@ -1062,7 +1063,7 @@ async def mastodon_callback(
             await crud.authorize_miauth_session(
                 db, session_id=session.session_id, user_id=state_obj.user_id
             )
-            token = await crud.create_oauth_token(
+            await crud.create_oauth_token(
                 db, session_id=session.session_id,
                 app_id=session.app_id, user_id=state_obj.user_id,
                 scopes=session.scopes,

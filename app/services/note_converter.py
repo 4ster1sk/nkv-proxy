@@ -4,7 +4,38 @@ Mastodon ステータス → Misskey ノート変換
 Mastodon の status オブジェクトを Misskey の Note 形式に変換する。
 """
 from __future__ import annotations
-from app.services.user_converter import masto_to_misskey_user_lite, html_to_text
+
+from app.services.user_converter import html_to_text, masto_to_misskey_user_lite
+
+
+def _build_reaction_key(er: dict) -> tuple[str, str | None]:
+    """
+    Fedibird emoji_reaction エントリから Misskey 形式のリアクションキーと画像URLを構築。
+
+    Returns (reaction_key, emoji_url).
+      - Unicode:        "❤"
+      - Local custom:   ":awesome:"
+      - Remote custom:  ":awesome@remote.host:"
+    """
+    name = er.get("name", "")
+    domain = er.get("domain")
+    url = er.get("url")
+
+    if not name:
+        return ("", None)
+
+    # 既に :...: 形式（Nekonoverse スタイル）
+    if name.startswith(":") and name.endswith(":"):
+        return (name, url)
+
+    # 非ASCII文字 = Unicode 絵文字
+    if not name.isascii():
+        return (name, None)
+
+    # ASCII shortcode（コロンなし）
+    if domain:
+        return (f":{name}@{domain}:", url)
+    return (f":{name}:", url)
 
 
 def masto_status_to_mk_note(status: dict) -> dict:
@@ -64,16 +95,26 @@ def masto_status_to_mk_note(status: dict) -> dict:
             "user": None,
         })
 
-    # リアクション: Mastodon の favourites_count を ❤ に
+    # リアクション: emoji_reactions (Fedibird拡張) を優先、なければ favourites_count
     reactions: dict = {}
-    if status.get("favourites_count", 0) > 0:
+    reaction_emojis: dict = {}
+    my_reaction: str | None = None
+    fedibird_reactions = status.get("emoji_reactions") or []
+    if fedibird_reactions:
+        for er in fedibird_reactions:
+            rkey, emoji_url = _build_reaction_key(er)
+            if not rkey:
+                continue
+            reactions[rkey] = er.get("count", 0)
+            if emoji_url:
+                # Misskey の reactionEmojis はコロンなしキー (e.g. "blobcat@remote")
+                reaction_emojis[rkey.strip(":")] = emoji_url
+            if er.get("me"):
+                my_reaction = rkey
+    elif status.get("favourites_count", 0) > 0:
         reactions["❤"] = status["favourites_count"]
-
-    # emoji_reactions (Fedibird拡張) があれば取り込む
-    for er in (status.get("emoji_reactions") or []):
-        emoji_key = er.get("name", "").strip(":")
-        if emoji_key:
-            reactions[f":{emoji_key}:"] = er.get("count", 0)
+    if status.get("favourited") and not my_reaction:
+        my_reaction = "❤"
 
     # リノート (reblog)
     renote = None
@@ -129,7 +170,7 @@ def masto_status_to_mk_note(status: dict) -> dict:
         "repliesCount": status.get("replies_count", 0),
         "reactionCount": sum(reactions.values()),
         "reactions": reactions,
-        "reactionEmojis": {},
+        "reactionEmojis": reaction_emojis,
         "fileIds": [f["id"] for f in files],
         "files": files,
         "replyId": reply_id,
@@ -138,11 +179,12 @@ def masto_status_to_mk_note(status: dict) -> dict:
         "clippedCount": 0,
         "mentions": mentions,
         "tags": tags,
-        "emojis": [],
+        "emojis": reaction_emojis,
         "poll": poll,
         # Mastodon 側の追加情報
         "uri": status.get("uri"),
         "url": status.get("url"),
+        "myReaction": my_reaction,
         "favourited": status.get("favourited", False),
         "reblogged": status.get("reblogged", False),
         "bookmarked": status.get("bookmarked", False),

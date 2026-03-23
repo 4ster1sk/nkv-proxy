@@ -1,17 +1,20 @@
 """Tests for PostgreSQL-backed user auth + miAuth flow (SQLite in-memory)."""
 
+import asyncio
 import os
+
 import pytest
 import pytest_asyncio
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.db import (
+    crud,
+    models,  # noqa
+)
 from app.db.database import Base, get_db
-from app.db import models  # noqa
-from app.db import crud
 
 _test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 _TestSession = async_sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)
@@ -47,6 +50,7 @@ async def db() -> AsyncSession:
 @pytest.fixture
 def client_with_db():
     from fastapi.testclient import TestClient
+
     from app.main import app
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:
@@ -146,7 +150,7 @@ class TestMiAuthSessionCrud:
 
     @pytest.mark.asyncio
     async def test_expired_session_not_found(self, db):
-        from datetime import timedelta, timezone, datetime
+        from datetime import datetime, timedelta, timezone
         sid = "aaaabbbb-0000-0000-0000-000000000002"
         session = await crud.create_miauth_session(db, session_id=sid)
         session.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -208,6 +212,7 @@ class TestMiauthConfirmFlow:
 
     def _setup_client(self):
         from fastapi.testclient import TestClient
+
         from app.main import app
         app.dependency_overrides[get_db] = _override_get_db
         return TestClient(app)
@@ -240,7 +245,6 @@ class TestMiauthConfirmFlow:
                     instance="https://mastodon.social", account_id="m1",
                 )
                 await s.commit()
-        import asyncio
         asyncio.get_event_loop().run_until_complete(_set_masto())
         client.post("/login", data={"username": "confirm_test1", "password": "password123"})
 
@@ -268,7 +272,6 @@ class TestMiauthConfirmFlow:
                     instance="https://mastodon.social", account_id="m2",
                 )
                 await s.commit()
-        import asyncio
         asyncio.get_event_loop().run_until_complete(_set_masto())
         client.post("/login", data={"username": "approve_test1", "password": "password123"})
 
@@ -324,7 +327,6 @@ class TestMiauthConfirmFlow:
                     instance="https://mastodon.social", account_id="m3",
                 )
                 await s.commit()
-        import asyncio
         asyncio.get_event_loop().run_until_complete(_set_masto())
         client.post("/login", data={"username": "admin_warn_test1", "password": "password123"})
 

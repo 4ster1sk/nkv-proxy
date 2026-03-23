@@ -1,16 +1,17 @@
-from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 import os
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
+from fastapi import FastAPI, WebSocket
+from fastapi import Query as WsQuery
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.api import misskey_compat, misskey_endpoints, nodeinfo
+from app.api.v1 import accounts, misc, statuses, streaming
+from app.api.v1.auth import router as auth_router
 from app.core.config import settings
 from app.db.database import create_tables
-from app.api.v1 import accounts, statuses, misc, streaming
-from app.api.v1.auth import router as auth_router
-from app.api import nodeinfo, misskey_compat, misskey_endpoints
-
 
 # DEBUG ログ設定（Mastodon URL トレース用）
 logging.basicConfig(level=logging.INFO)
@@ -60,8 +61,6 @@ app.include_router(nodeinfo.router)
 app.include_router(misskey_compat.router)
 app.include_router(misskey_endpoints.router)
 
-
-from fastapi import WebSocket, Query as WsQuery
 
 @app.websocket("/streaming")
 async def misskey_streaming_ws(

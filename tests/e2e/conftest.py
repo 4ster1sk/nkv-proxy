@@ -11,6 +11,7 @@ import pytest_asyncio
 # All URLs are docker-internal service names
 PROXY_BASE = "http://proxy:8000"
 NKV_BACKEND = "http://nkv-app:8000"
+NKV_BACKEND_2 = "http://nkv-app-2:8000"
 
 
 async def wait_for_healthy(url: str, timeout: float = 120, interval: float = 2):
@@ -34,4 +35,5 @@ async def services_ready():
     await asyncio.gather(
         wait_for_healthy(f"{PROXY_BASE}/api/v1/streaming/health"),
         wait_for_healthy(f"{NKV_BACKEND}/api/v1/health"),
+        wait_for_healthy(f"{NKV_BACKEND_2}/api/v1/health"),
     )

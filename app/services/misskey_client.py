@@ -4,8 +4,10 @@ All methods accept an `i` (token) and forward to the Misskey instance.
 """
 
 from __future__ import annotations
+
 import httpx
 from fastapi import HTTPException
+
 from app.core.config import settings
 
 

@@ -1,8 +1,9 @@
 """Tests for Misskey-compatible API endpoints ( POST /api/... )."""
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch, MagicMock
-from tests.conftest import SAMPLE_USER, SAMPLE_NOTE, SAMPLE_NOTIFICATION
+
+from tests.conftest import SAMPLE_NOTIFICATION
 
 AUTH_BODY = {"i": "test_access_token_fixed"}
 
@@ -545,6 +546,10 @@ class TestMisskeyCompatReactions:
 
     def test_api_reactions_list(self, client: TestClient):
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_status = AsyncMock(return_value={
+                "id": "note001",
+                "emoji_reactions": [{"name": "❤", "count": 1, "me": True, "account_ids": []}],
+            })
             MockClient.return_value._get = AsyncMock(return_value=[])
             resp = client.post("/api/notes/reactions", json={**AUTH_BODY, "noteId": "note001"})
         assert resp.status_code == 200
@@ -586,7 +591,6 @@ class TestMisskeyCompatNotesCreate:
         """fileIds=None のとき media_ids が Mastodon に送られない。"""
         from app.services.mastodon_client import MastodonClient as RealClient
         captured = {}
-        original_post = RealClient._post
 
         async def mock_post(self, path, json=None, data=None):
             captured["json"] = json
@@ -761,6 +765,162 @@ class TestMisskeyCompatMuting:
             instance.get_mutes = AsyncMock(return_value=[])
             resp = client.post("/api/muting/list", json=AUTH_BODY)
         assert resp.status_code == 200
+
+
+class TestBuildReactionKey:
+    """_build_reaction_key ヘルパーのユニットテスト"""
+
+    def test_unicode_emoji(self):
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({"name": "❤", "count": 1})
+        assert rkey == "❤"
+        assert url is None
+
+    def test_unicode_zwj_emoji(self):
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({"name": "👨‍👩‍👧‍👦", "count": 1})
+        assert rkey == "👨‍👩‍👧‍👦"
+        assert url is None
+
+    def test_local_custom_emoji_nekonoverse_style(self):
+        """Nekonoverse は :name: 形式で返す"""
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({
+            "name": ":awesome:",
+            "url": "https://example.com/emoji/awesome.png",
+            "count": 2,
+        })
+        assert rkey == ":awesome:"
+        assert url == "https://example.com/emoji/awesome.png"
+
+    def test_remote_custom_emoji_nekonoverse_style(self):
+        """Nekonoverse は :name@domain: 形式で返す"""
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({
+            "name": ":blobcat@remote.host:",
+            "url": "https://remote.host/emoji/blobcat.png",
+            "count": 1,
+        })
+        assert rkey == ":blobcat@remote.host:"
+        assert url == "https://remote.host/emoji/blobcat.png"
+
+    def test_local_custom_emoji_shortcode_only(self):
+        """他サーバーは name="shortcode" (コロンなし) で返す"""
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({
+            "name": "awesome",
+            "url": "https://example.com/emoji/awesome.png",
+            "count": 2,
+        })
+        assert rkey == ":awesome:"
+        assert url == "https://example.com/emoji/awesome.png"
+
+    def test_remote_custom_emoji_with_domain_field(self):
+        """name="shortcode", domain="remote.host" の形式"""
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({
+            "name": "blobcat",
+            "domain": "remote.host",
+            "url": "https://remote.host/emoji/blobcat.png",
+            "count": 1,
+        })
+        assert rkey == ":blobcat@remote.host:"
+        assert url == "https://remote.host/emoji/blobcat.png"
+
+    def test_empty_name(self):
+        from app.services.note_converter import _build_reaction_key
+        rkey, url = _build_reaction_key({"name": "", "count": 1})
+        assert rkey == ""
+        assert url is None
+
+
+class TestNoteConverterReactionEmojis:
+    """reactionEmojis が正しく構築されるかテスト"""
+
+    def test_reaction_emojis_for_custom_emoji(self):
+        from app.services.note_converter import masto_status_to_mk_note
+        status = {
+            **MASTO_STATUS,
+            "emoji_reactions": [
+                {"name": ":awesome:", "count": 2, "me": False,
+                 "url": "https://example.com/emoji/awesome.png"},
+                {"name": "❤", "count": 1, "me": True},
+            ],
+        }
+        note = masto_status_to_mk_note(status)
+        assert note["reactions"] == {":awesome:": 2, "❤": 1}
+        assert note["reactionEmojis"] == {"awesome": "https://example.com/emoji/awesome.png"}
+        assert note["reactionCount"] == 3
+        assert note["myReaction"] == "❤"
+
+    def test_reaction_emojis_for_remote_custom(self):
+        from app.services.note_converter import masto_status_to_mk_note
+        status = {
+            **MASTO_STATUS,
+            "emoji_reactions": [
+                {"name": "blobcat", "domain": "remote.host", "count": 1,
+                 "url": "https://remote.host/emoji/blobcat.png", "me": True},
+            ],
+        }
+        note = masto_status_to_mk_note(status)
+        assert ":blobcat@remote.host:" in note["reactions"]
+        assert note["reactions"][":blobcat@remote.host:"] == 1
+        assert note["reactionEmojis"]["blobcat@remote.host"] == "https://remote.host/emoji/blobcat.png"
+        assert note["myReaction"] == ":blobcat@remote.host:"
+
+    def test_reaction_emojis_empty_for_unicode_only(self):
+        from app.services.note_converter import masto_status_to_mk_note
+        status = {
+            **MASTO_STATUS,
+            "emoji_reactions": [
+                {"name": "❤", "count": 3, "me": False},
+                {"name": "👍", "count": 1, "me": False},
+            ],
+        }
+        note = masto_status_to_mk_note(status)
+        assert note["reactionEmojis"] == {}
+
+    def test_favourites_count_fallback(self):
+        from app.services.note_converter import masto_status_to_mk_note
+        status = {**MASTO_STATUS, "favourites_count": 5, "favourited": True}
+        note = masto_status_to_mk_note(status)
+        assert note["reactions"] == {"❤": 5}
+        assert note["myReaction"] == "❤"
+        assert note["reactionEmojis"] == {}
+
+
+class TestReactionsListRemoteEmoji:
+    """/api/notes/reactions がリモート絵文字のキーを正しく返すテスト"""
+
+    def test_reactions_list_uses_build_reaction_key(self, client: TestClient):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_status = AsyncMock(return_value={
+                "id": "note001",
+                "emoji_reactions": [
+                    {"name": "blobcat", "domain": "remote.host", "count": 1,
+                     "url": "https://remote.host/emoji/blobcat.png",
+                     "account_ids": ["user001"]},
+                ],
+            })
+            resp = client.post("/api/notes/reactions", json={**AUTH_BODY, "noteId": "note001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["reaction"] == ":blobcat@remote.host:"
+
+    def test_reactions_list_nekonoverse_format(self, client: TestClient):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_status = AsyncMock(return_value={
+                "id": "note001",
+                "emoji_reactions": [
+                    {"name": ":awesome:", "count": 2, "url": "https://example.com/awesome.png"},
+                ],
+            })
+            resp = client.post("/api/notes/reactions", json={**AUTH_BODY, "noteId": "note001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert all(r["reaction"] == ":awesome:" for r in data)
 
 
 class TestMisskeyCompatMiAuth:

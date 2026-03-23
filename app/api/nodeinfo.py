@@ -9,6 +9,7 @@ Data:       GET /nodeinfo/2.0          → actual nodeinfo document
 
 import httpx
 from fastapi import APIRouter, Request
+
 from app.core.config import settings
 
 router = APIRouter(tags=["nodeinfo"])

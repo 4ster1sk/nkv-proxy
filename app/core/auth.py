@@ -5,13 +5,13 @@ Bearer トークン → OAuthToken → User の順で DB を引く。
 上流 Mastodon への転送時は User.mastodon_token を使う。
 """
 
-from fastapi import HTTPException, Security, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_db
 from app.db import crud
-from app.db.models import User, OAuthToken
+from app.db.database import get_db
+from app.db.models import OAuthToken, User
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

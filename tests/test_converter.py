@@ -1,14 +1,13 @@
 """Tests for Misskey → Mastodon conversion logic."""
-import pytest
 from app.services.converter import (
-    misskey_reaction_to_fedibird,
-    fedibird_reaction_to_misskey,
     build_reaction_summary,
-    mk_user_to_account,
+    fedibird_reaction_to_misskey,
+    misskey_reaction_to_fedibird,
     mk_note_to_status,
     mk_notification_to_mastodon,
+    mk_user_to_account,
 )
-from tests.conftest import SAMPLE_USER, SAMPLE_NOTE, SAMPLE_NOTIFICATION
+from tests.conftest import SAMPLE_NOTE, SAMPLE_NOTIFICATION, SAMPLE_USER
 
 INSTANCE_URL = "https://misskey.example.com"
 
@@ -120,7 +119,6 @@ class TestNoteConversion:
         status = mk_note_to_status(SAMPLE_NOTE, INSTANCE_URL)
         assert "emoji_reactions" in status
         assert len(status["emoji_reactions"]) == 2
-        counts = {r["name"]: r["count"] for r in status["emoji_reactions"]}
         # ❤ should appear with count 3
         heart = next((r for r in status["emoji_reactions"] if r["count"] == 3), None)
         assert heart is not None

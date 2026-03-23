@@ -11,18 +11,23 @@ Authorization: Bearer ヘッダーのどちらでも受け付ける。
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, Depends, Request, HTTPException
-from app.core.config import settings
-from app.db.database import get_db
-from app.db import crud
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.services.misskey_client import MisskeyClient
+
+from app.core.config import settings
+from app.db import crud
+from app.db.database import get_db
 from app.services.mastodon_client import MastodonClient
-from app.services.user_converter import (
-    masto_to_misskey_user_lite,
-    masto_to_misskey_user_detailed,
+from app.services.misskey_client import MisskeyClient
+from app.services.note_converter import (
+    _build_reaction_key,
+    masto_status_to_mk_note,
+    masto_statuses_to_mk_notes,
 )
-from app.services.note_converter import masto_status_to_mk_note, masto_statuses_to_mk_notes
+from app.services.user_converter import (
+    masto_to_misskey_user_detailed,
+    masto_to_misskey_user_lite,
+)
 
 router = APIRouter(prefix="/api", tags=["misskey-compat"])
 
@@ -121,6 +126,7 @@ async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
         if api_key_obj is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked token")
         from sqlalchemy import select as _sel
+
         from app.db.models import User as _User
         user_result = await db.execute(_sel(_User).where(_User.id == api_key_obj.user_id))
         user = user_result.scalar_one_or_none()
@@ -182,7 +188,6 @@ async def api_meta(request: Request):
         pass
 
     host = settings.MASTODON_INSTANCE_URL.rstrip("/")
-    host_bare = host.replace("https://", "").replace("http://", "")
 
     # policies: 上流の値をベースに antennaLimit だけ 0 に上書き（仕様通り）
     upstream_policies: dict = upstream.get("policies") or {}
@@ -574,8 +579,8 @@ async def api_reactions_create(request: Request, db: AsyncSession = Depends(get_
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    reaction = body.get("reaction", "❤").strip(":")
-    # 絵文字リアクション（Fedibird拡張）または favourite にフォールバック
+    reaction = body.get("reaction", "❤")
+    # Fedibird API は ":shortcode:" 形式をそのまま受け取る（コロンを剥がさない）
     try:
         status = await mk.add_emoji_reaction(body["noteId"], reaction)
     except Exception:
@@ -590,7 +595,7 @@ async def api_reactions_delete(request: Request, db: AsyncSession = Depends(get_
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    reaction = body.get("reaction", "❤").strip(":")
+    reaction = body.get("reaction", "❤")
     try:
         status = await mk.remove_emoji_reaction(body["noteId"], reaction)
     except Exception:
@@ -605,8 +610,26 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    # Mastodon には reactions 一覧エンドポイントなし → favourited_by で代替
-    accounts = await mk._get(f"statuses/{body['noteId']}/favourited_by")
+    note_id = body.get("noteId", "")
+    # ステータスを取得して emoji_reactions (Fedibird拡張) からリアクション一覧を構築
+    status = await mk.get_status(note_id)
+    fedibird_reactions = status.get("emoji_reactions") or []
+    if fedibird_reactions:
+        result = []
+        for er in fedibird_reactions:
+            rkey, _ = _build_reaction_key(er)
+            if not rkey:
+                continue
+            # account_ids があれば各ユーザーを展開
+            for aid in (er.get("account_ids") or []):
+                result.append({"id": aid, "reaction": rkey, "user": {"id": aid}})
+            if not er.get("account_ids"):
+                # account_ids がない場合はカウント分だけダミーエントリ
+                for _ in range(er.get("count", 0)):
+                    result.append({"id": "", "reaction": rkey, "user": {}})
+        return result
+    # フォールバック: favourited_by
+    accounts = await mk._get(f"statuses/{note_id}/favourited_by")
     return [
         {"id": a.get("id"), "reaction": "❤", "user": masto_to_misskey_user_lite(a)}
         for a in (accounts if isinstance(accounts, list) else [])
@@ -816,6 +839,7 @@ async def api_miauth_check(
 
     # セッションに紐付いたOAuthTokenを取得
     from sqlalchemy import select as sa_select
+
     from app.db.models import OAuthToken
     result = await db.execute(
         sa_select(OAuthToken).where(
@@ -833,7 +857,6 @@ async def api_miauth_check(
         return {"ok": False}
 
     # Misskey互換のuserオブジェクトを構築
-    instance_host = (user.mastodon_instance or settings.MASTODON_INSTANCE_URL).replace("https://", "").rstrip("/")
     return {
         "ok": True,
         "token": token.access_token,

@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.auth import get_mastodon_token, get_current_user
-from app.db.database import get_db
-from app.db.models import User
-from app.db import crud
-from app.services.mastodon_client import MastodonClient
+
+from app.core.auth import get_current_user, get_mastodon_token
 from app.core.config import settings
+from app.db.models import User
+from app.services.mastodon_client import MastodonClient
 
 router = APIRouter(prefix="/api/v1", tags=["accounts"])
 

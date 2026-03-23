@@ -20,7 +20,7 @@ import httpx
 import pytest
 from bs4 import BeautifulSoup
 
-from tests.e2e.conftest import PROXY_BASE, NKV_BACKEND
+from tests.e2e.conftest import NKV_BACKEND, PROXY_BASE
 
 # Use timestamp suffix so the test is re-runnable without DB reset
 _TS = str(int(time.time()))
@@ -156,7 +156,7 @@ async def test_full_miauth_flow(services_ready):
             f"Unexpected callback: {callback_url}"
         )
         assert "code=" in callback_url, f"No code in callback: {callback_url}"
-        print(f"[STEP 3c] Authorization code received")
+        print("[STEP 3c] Authorization code received")
 
         # 3d. Follow callback redirect to proxy
         resp = await client.get(
