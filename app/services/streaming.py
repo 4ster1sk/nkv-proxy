@@ -23,7 +23,7 @@ CHANNEL_TO_STREAM: dict[str, str] = {
     "homeTimeline":   "user",          # /streaming/user (TL + 通知)
     "main":           "user",          # /streaming/user (通知含む)
     "notifications":  "user",          # /streaming/user (通知含む)
-    "localTimeline":  "public/local",  # /streaming/public/local
+    "localTimeline":  "public",        # /streaming/public (Nekonoverse に /public/local はない)
     "globalTimeline": "public",        # /streaming/public
     "hybridTimeline": "public",        # /streaming/public
     "messaging":      "",

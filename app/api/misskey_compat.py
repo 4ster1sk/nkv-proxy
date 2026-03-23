@@ -234,10 +234,12 @@ async def api_meta(request: Request):
     }
 
     # features: Misskey の features 構造に準拠
+    # 上流が Mastodon 互換サーバーの場合 /api/meta が存在しないため
+    # localTimeline / globalTimeline はプロキシとして常に True にする
     upstream_features: dict = upstream.get("features") or {}
     features = {
-        "localTimeline":          upstream_features.get("localTimeline", False),
-        "globalTimeline":         upstream_features.get("globalTimeline", False),
+        "localTimeline":          upstream_features.get("localTimeline", True),
+        "globalTimeline":         upstream_features.get("globalTimeline", True),
         "registration":           upstream_features.get("registration", False),
         "emailRequiredForSignup": upstream_features.get("emailRequiredForSignup", False),
         "hcaptcha":               upstream_features.get("hcaptcha", False),

@@ -271,6 +271,29 @@ async def test_full_miauth_flow(services_ready):
         print(f"[STEP 5] /api/i success: username={user_info.get('username')}")
 
         # ==================================================
+        # STEP 5b: Verify /api/meta features
+        # ==================================================
+        resp = await client.post(
+            f"{PROXY_BASE}/api/meta",
+            json={"i": access_token},
+        )
+        assert resp.status_code == 200, (
+            f"/api/meta failed: {resp.status_code} {resp.text[:300]}"
+        )
+        meta = resp.json()
+        features = meta.get("features", {})
+        assert features.get("localTimeline") is True, (
+            f"localTimeline should be True: {features}"
+        )
+        assert features.get("globalTimeline") is True, (
+            f"globalTimeline should be True: {features}"
+        )
+        assert features.get("miauth") is True, (
+            f"miauth should be True: {features}"
+        )
+        print(f"[STEP 5b] /api/meta features OK: localTL={features['localTimeline']}, globalTL={features['globalTimeline']}")
+
+        # ==================================================
         # STEP 6: Create a note via /api/notes/create
         # ==================================================
         note_text = f"E2E test note {_TS}"
