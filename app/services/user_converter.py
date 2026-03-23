@@ -55,11 +55,21 @@ def masto_to_misskey_user_lite(masto: dict) -> dict:
 
     Misskey クライアントがノートの `user` フィールドとして期待する最小セット。
     """
+    instance = (
+        {
+            "name": masto.get("server_name"),
+            "softwareName": masto.get("server_software"),
+            "softwareVersion": masto.get("server_software_version"),
+        }
+        if masto.get("domain")
+        else None
+    )
+
     return {
         "id": masto.get("id", ""),
         "name": masto.get("display_name") or masto.get("username", ""),
         "username": masto.get("username", ""),
-        "host": None,
+        "host": masto.get("domain", None),
         "avatarUrl": masto.get("avatar") or masto.get("avatar_static"),
         "avatarBlurhash": None,
         "avatarDecorations": [],
@@ -68,6 +78,7 @@ def masto_to_misskey_user_lite(masto: dict) -> dict:
         "emojis": {},
         "onlineStatus": "unknown",
         "badgeRoles": [],
+        "instance": instance,
     }
 
 
