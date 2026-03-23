@@ -18,7 +18,7 @@ class TestInstanceEndpoints:
     def test_instance_info(self, client: TestClient, auth_headers: dict):
         with patch("app.api.v1.misc.MastodonClient") as MockClient:
             MockClient.return_value.get_instance = AsyncMock(return_value={
-                "uri": "mastodon.social", "title": "Test", "version": "4.3.0",
+                "uri": "nekonoverse.org", "title": "Test", "version": "4.3.0",
                 "description": "desc", "stats": {}, "languages": [], "rules": [],
             })
             resp = client.get("/api/v1/instance", headers=auth_headers)
@@ -456,4 +456,4 @@ class TestNodeInfo:
         """href が Misskey インスタンスではなくプロキシ自身を指している"""
         resp = client.get("/.well-known/nodeinfo")
         href = resp.json()["links"][0]["href"]
-        assert "mastodon.social" not in href  # Misskey のドメインを指してはいけない
+        assert "nekonoverse.org" not in href  # Misskey のドメインを指してはいけない

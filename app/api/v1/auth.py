@@ -513,7 +513,7 @@ async def dashboard(
             <label>MastodonインスタンスURL</label>
             <input type="url" name="instance_url"
                    value="{settings.MASTODON_INSTANCE_URL}"
-                   placeholder="https://mastodon.social" required>
+                   placeholder="https://nekonoverse.org" required>
           </div>
           <button type="submit" class="btn">Mastodonと連携する</button>
         </form>"""

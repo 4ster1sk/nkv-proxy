@@ -46,7 +46,7 @@ services:
     ports:
       - "${LISTEN_PORT:-8000}:8000"
     environment:
-      MASTODON_INSTANCE_URL: "${MASTODON_INSTANCE_URL:-https://mastodon.social}"
+      MASTODON_INSTANCE_URL: "${MASTODON_INSTANCE_URL:-https://nekonoverse.org}"
       APP_NAME: "${APP_NAME:-Misskey-Mastodon-Proxy}"
       APP_CALLBACK_URL: "${APP_CALLBACK_URL:-}"
       PROXY_BASE_URL: "${PROXY_BASE_URL:-}"

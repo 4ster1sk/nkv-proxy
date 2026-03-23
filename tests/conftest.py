@@ -54,7 +54,7 @@ def setup_test_db():
                 user.id = TEST_USER_ID
                 # mastodon_token を設定（/api/i 等のテストで必要）
                 user.mastodon_token = "test_mastodon_token"
-                user.mastodon_instance = "https://mastodon.social"
+                user.mastodon_instance = "https://nekonoverse.org"
                 user.mastodon_account_id = "masto_user_001"
                 await s.flush()
                 token = await crud.create_oauth_token(

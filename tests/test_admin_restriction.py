@@ -68,7 +68,7 @@ async def _create_user_with_token(
     async with _TestSession() as s:
         user = await crud.create_user(s, username=username, password="password123")
         user.mastodon_token = mastodon_token
-        user.mastodon_instance = "https://mastodon.social"
+        user.mastodon_instance = "https://nekonoverse.org"
         await s.flush()
         token = await crud.create_oauth_token(
             s, session_id=None, app_id=None,
@@ -243,7 +243,7 @@ class TestAdminRestriction:
         masto_account = {
             "id": "u001", "username": "apikey_user", "display_name": "ApiKey User",
             "locked": False, "bot": False, "created_at": "2023-01-01T00:00:00Z",
-            "note": "", "url": "https://mastodon.social/@apikey_user",
+            "note": "", "url": "https://nekonoverse.org/@apikey_user",
             "avatar": None, "header": None,
             "followers_count": 0, "following_count": 0, "statuses_count": 0,
             "fields": [],

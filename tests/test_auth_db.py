@@ -242,7 +242,7 @@ class TestMiauthConfirmFlow:
                 user = await crud.get_user_by_username(s, "confirm_test1")
                 await crud.set_mastodon_credentials(
                     s, user.id, token="masto_t1",
-                    instance="https://mastodon.social", account_id="m1",
+                    instance="https://nekonoverse.org", account_id="m1",
                 )
                 await s.commit()
         asyncio.get_event_loop().run_until_complete(_set_masto())
@@ -269,7 +269,7 @@ class TestMiauthConfirmFlow:
                 user = await crud.get_user_by_username(s, "approve_test1")
                 await crud.set_mastodon_credentials(
                     s, user.id, token="masto_t2",
-                    instance="https://mastodon.social", account_id="m2",
+                    instance="https://nekonoverse.org", account_id="m2",
                 )
                 await s.commit()
         asyncio.get_event_loop().run_until_complete(_set_masto())
@@ -324,7 +324,7 @@ class TestMiauthConfirmFlow:
                 user = await crud.get_user_by_username(s, "admin_warn_test1")
                 await crud.set_mastodon_credentials(
                     s, user.id, token="masto_t3",
-                    instance="https://mastodon.social", account_id="m3",
+                    instance="https://nekonoverse.org", account_id="m3",
                 )
                 await s.commit()
         asyncio.get_event_loop().run_until_complete(_set_masto())

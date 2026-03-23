@@ -22,8 +22,8 @@ MASTO_STATUS = {
     "spoiler_text": "",
     "visibility": "public",
     "sensitive": False,
-    "uri": "https://mastodon.social/@user/status001",
-    "url": "https://mastodon.social/@user/status001",
+    "uri": "https://nekonoverse.org/@user/status001",
+    "url": "https://nekonoverse.org/@user/status001",
     "replies_count": 0, "reblogs_count": 1, "favourites_count": 3,
     "favourited": False, "reblogged": False, "bookmarked": False,
     "reblog": None, "poll": None,
@@ -77,7 +77,7 @@ class TestConvertEvent:
 
     def _proxy(self):
         ws = MagicMock()
-        return MisskeyStreamingProxy(ws, mastodon_token="tok", mastodon_instance="https://mastodon.social")
+        return MisskeyStreamingProxy(ws, mastodon_token="tok", mastodon_instance="https://nekonoverse.org")
 
     def test_update_event_converts_to_note(self):
         """Mastodon `update` イベント → Misskey `note` イベント。"""
@@ -206,7 +206,7 @@ class TestChannelMapping:
     def test_mastodon_sse_url_generation(self):
         """各チャンネルが正しい Mastodon SSE URL にマッピングされる。"""
         from app.services.streaming import CHANNEL_TO_STREAM
-        instance = "https://mastodon.social"
+        instance = "https://nekonoverse.org"
 
         cases = [
             ("homeTimeline",   f"{instance}/api/v1/streaming/user"),
@@ -227,7 +227,7 @@ class TestChannelMapping:
         """connect コマンドを受け取ると connected を返す。"""
         ws = AsyncMock()
         ws.receive_text = AsyncMock(side_effect=Exception("stop"))
-        proxy = MisskeyStreamingProxy(ws, "tok", "https://mastodon.social")
+        proxy = MisskeyStreamingProxy(ws, "tok", "https://nekonoverse.org")
         # _handle_connect を直接テスト
         await proxy._handle_connect({"channel": "homeTimeline", "id": "ch1"})
         ws.send_text.assert_called_once()
@@ -239,7 +239,7 @@ class TestChannelMapping:
     async def test_handle_disconnect_cleans_up(self):
         """disconnect コマンドでチャンネルが削除される。"""
         ws = AsyncMock()
-        proxy = MisskeyStreamingProxy(ws, "tok", "https://mastodon.social")
+        proxy = MisskeyStreamingProxy(ws, "tok", "https://nekonoverse.org")
         proxy._channels["ch1"] = "user"
         proxy._stream_channels["user"] = {"ch1"}
         # タスクのモック

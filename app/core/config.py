@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # MASTODON_INSTANCE_URL: ユーザーが Mastodon 連携を設定していない場合の
     # フォールバックインスタンス URL。
     # ユーザーごとの接続先は DB の users.mastodon_instance で管理される。
-    MASTODON_INSTANCE_URL: str = "https://mastodon.social"
+    MASTODON_INSTANCE_URL: str = "https://nekonoverse.org"
 
     # PostgreSQL DSN
     DATABASE_URL: str = "postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db"
