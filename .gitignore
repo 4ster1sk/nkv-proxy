@@ -3,3 +3,4 @@ nginx/certs/*
 .env
 docker-compose.yml
 volumes/
+.claude/settings.local.json
