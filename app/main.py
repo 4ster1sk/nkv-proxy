@@ -13,9 +13,12 @@ from app.api.v1.auth import router as auth_router
 from app.core.config import settings
 from app.db.database import create_tables
 
-# DEBUG ログ設定（Mastodon URL トレース用）
-logging.basicConfig(level=logging.INFO)
+# ログ設定
+_log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+logging.basicConfig(level=_log_level)
 logging.getLogger("app.services.mastodon_client").setLevel(logging.DEBUG)
+
+logging.getLogger("app.services.streaming").setLevel(logging.DEBUG)
 
 
 @asynccontextmanager

@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # ストリーミングタイムアウト
     STREAM_TIMEOUT: int = 30
 
+    # ログレベル（DEBUG / INFO / WARNING / ERROR）
+    LOG_LEVEL: str = "INFO"
+
+    # ストリーミングデバッグログ（SSE受信データ・変換前後を出力）
+    STREAMING_DEBUG: bool = False
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

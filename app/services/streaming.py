@@ -80,6 +80,7 @@ async def _mastodon_sse_stream(
                     event_name = ""
                     async for line in resp.aiter_lines():
                         line = line.strip()
+                        logger.debug("SSE raw line: %r", line)
                         if not line:
                             event_name = ""
                             continue
@@ -95,6 +96,7 @@ async def _mastodon_sse_stream(
                                 data = json.loads(raw)
                             except json.JSONDecodeError:
                                 data = {"raw": raw}
+                            logger.debug("SSE event=%r data=%r", event_name, data)
                             if event_name:
                                 yield event_name, data
         except asyncio.CancelledError:
@@ -173,6 +175,22 @@ class MisskeyStreamingProxy:
                     task.cancel()
                 del self._stream_channels[stream_name]
 
+    async def _fetch_status(self, status_id: str) -> dict | None:
+        """ID のみのペイロードが来た場合にフル status を取得する。"""
+        url = f"{self.mastodon_instance}/api/v1/statuses/{status_id}"
+        headers = {}
+        if self.mastodon_token:
+            headers["Authorization"] = f"Bearer {self.mastodon_token}"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    return resp.json()
+                logger.warning("Failed to fetch status %s: %d", status_id, resp.status_code)
+        except Exception as exc:
+            logger.warning("Error fetching status %s: %s", status_id, exc)
+        return None
+
     async def _sse_to_ws(self, stream_name: str) -> None:
         try:
             async for event_name, data in _mastodon_sse_stream(
@@ -181,7 +199,20 @@ class MisskeyStreamingProxy:
                 channel_ids = self._stream_channels.get(stream_name, set())
                 if not channel_ids:
                     continue
-                mk_event, mk_body = self._convert_event(event_name, data)
+                try:
+                    # Nekonoverse は SSE で ID のみ送ってくるため、フル status を取得する
+                    if isinstance(data, dict) and set(data.keys()) == {"id"}:
+                        status_id = data["id"]
+                        data = await self._fetch_status(status_id)
+                        if not data:
+                            continue
+                        logger.debug("Fetched full status for id=%s", status_id)
+                    logger.debug("Converting event=%r data=%r", event_name, data)
+                    mk_event, mk_body = self._convert_event(event_name, data)
+                    logger.debug("Converted mk_event=%r mk_body=%r", mk_event, mk_body)
+                except Exception as exc:
+                    logger.warning("Event convert error (stream=%s event=%s): %s", stream_name, event_name, exc)
+                    continue
                 if mk_event is None:
                     continue
                 for cid in list(channel_ids):
