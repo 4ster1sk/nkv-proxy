@@ -17,8 +17,8 @@ from app.db.database import create_tables
 _log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(level=_log_level)
 logging.getLogger("app.services.mastodon_client").setLevel(logging.DEBUG)
-
-logging.getLogger("app.services.streaming").setLevel(logging.DEBUG)
+if settings.STREAMING_DEBUG:
+    logging.getLogger("app.services.streaming").setLevel(logging.DEBUG)
 
 
 @asynccontextmanager
