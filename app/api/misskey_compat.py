@@ -13,6 +13,7 @@ from __future__ import annotations
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.db import crud
@@ -687,22 +688,66 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
     note_id = body.get("noteId", "")
     reaction = body.get("reaction")  # Misskey は特定リアクションを絞り込み指定できる
 
+    def _parse_reacted_by(entries: list, fallback_reaction: str) -> list:
+        """
+        reacted_by レスポンスを Misskey reactions リスト形式に変換。
+
+        Nekonoverse の reacted_by は
+          [{"actor": {account}, "emoji": ":honi:"}, ...]
+        という形式で返す。account 配列形式の場合も許容する。
+        """
+        result = []
+        for entry in entries:
+            # {"actor": {...}, "emoji": ":honi:"} 形式
+            if "actor" in entry:
+                account = entry["actor"]
+                reaction = entry.get("emoji") or fallback_reaction
+            else:
+                # 通常の account オブジェクト形式（フォールバック）
+                account = entry
+                reaction = fallback_reaction
+
+            account = masto_to_misskey_user_lite(account)
+            result.append(
+                {
+                    "id": account.get("id", ""),
+                    # nullを返してきた場合、現在時刻を使う
+                    "createdAt": account.get(
+                        "created_at",
+                        datetime.now(timezone.utc)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"),
+                    ),
+                    "type": reaction,
+                    "user": account,
+                }
+            )
+        return result
+
     if reaction:
         # 特定リアクションのユーザー一覧:
         # GET /api/v1/statuses/{id}/reacted_by?emoji=:shortcode:
         try:
-            accounts = await mk.get_reacted_by(note_id, reaction)
-            return [
-                {"id": a.get("id"), "reaction": reaction,
-                 "user": masto_to_misskey_user_lite(a)}
-                for a in (accounts if isinstance(accounts, list) else [])
-            ]
+            entries = await mk.get_reacted_by(note_id, reaction)
+            return _parse_reacted_by(
+                entries if isinstance(entries, list) else [], reaction
+            )
         except Exception:
             # reacted_by 未対応サーバーは favourited_by にフォールバック
             accounts = await mk._get(f"statuses/{note_id}/favourited_by")
             return [
-                {"id": a.get("id"), "reaction": reaction,
-                 "user": masto_to_misskey_user_lite(a)}
+                {
+                    "id": a.get("id"),
+                    # nullを返してきた場合、現在時刻を使う
+                    "createdAt": a.get(
+                        "created_at",
+                        datetime.now(timezone.utc)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z"),
+                    ),
+                    "reaction": reaction,
+                    "user": masto_to_misskey_user_lite(a),
+                }
                 for a in (accounts if isinstance(accounts, list) else [])
             ]
 
@@ -715,23 +760,21 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
             rkey, _ = _build_reaction_key(er)
             if not rkey:
                 continue
-            # account_ids があれば各ユーザーを展開
+            # account_ids があれば各ユーザーを展開（ID のみで詳細なし）
             if er.get("account_ids"):
                 for aid in er["account_ids"]:
-                    result.append({"id": aid, "reaction": rkey, "user": {"id": aid}})
+                    result.append({"id": aid, "createdAt": "", "reaction": rkey, "user": {"id": aid}})
             else:
-                # account_ids がない場合は reacted_by エンドポイントで取得を試みる
+                # reacted_by エンドポイントでユーザー情報を取得
                 try:
-                    accounts = await mk.get_reacted_by(note_id, rkey)
-                    for a in (accounts if isinstance(accounts, list) else []):
-                        result.append({
-                            "id": a.get("id"), "reaction": rkey,
-                            "user": masto_to_misskey_user_lite(a),
-                        })
+                    entries = await mk.get_reacted_by(note_id, rkey)
+                    result.extend(_parse_reacted_by(
+                        entries if isinstance(entries, list) else [], rkey
+                    ))
                 except Exception:
                     # 取得できない場合はカウント分だけダミーエントリ
                     for _ in range(er.get("count", 0)):
-                        result.append({"id": "", "reaction": rkey, "user": {}})
+                        result.append({"id": "", "createdAt": "", "reaction": rkey, "user": {}})
         return result
 
     # フォールバック: favourited_by（Fedibird 拡張非対応サーバー）
