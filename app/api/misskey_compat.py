@@ -17,10 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db import crud
 from app.db.database import get_db
+from app.services.instance_cache import supports_local_timeline
 from app.services.mastodon_client import MastodonClient
 from app.services.misskey_client import MisskeyClient
 from app.services.note_converter import (
     _build_reaction_key,
+    mk_renote_stub,
     masto_status_to_mk_note,
     masto_statuses_to_mk_notes,
 )
@@ -240,10 +242,21 @@ async def api_meta(request: Request):
 
     # features: Misskey の features 構造に準拠
     # 上流が Mastodon 互換サーバーの場合 /api/meta が存在しないため
-    # localTimeline / globalTimeline はプロキシとして常に True にする
+    # globalTimeline はプロキシとして常に True にする
     upstream_features: dict = upstream.get("features") or {}
+
+    # ENABLE_LOCAL_TIMELINE 設定に基づいて LTL の表示可否を決定
+    _ltl_setting = settings.ENABLE_LOCAL_TIMELINE.lower()
+    if _ltl_setting == "true":
+        _ltl_available = True
+    elif _ltl_setting == "false":
+        _ltl_available = False
+    else:
+        # auto: キャッシュを使って確認（同期コンテキストなのでデフォルト False、実際の判定は LTL 呼び出し時）
+        _ltl_available = upstream_features.get("localTimeline", False)
+
     features = {
-        "localTimeline":          upstream_features.get("localTimeline", True),
+        "localTimeline":          _ltl_available,
         "globalTimeline":         upstream_features.get("globalTimeline", True),
         "registration":           upstream_features.get("registration", False),
         "emailRequiredForSignup": upstream_features.get("emailRequiredForSignup", False),
@@ -463,17 +476,61 @@ async def api_notes_timeline(request: Request, db: AsyncSession = Depends(get_db
 async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    mk = await _mastodon_client(token or "", db) if token else None
-    if mk is None:
-        return []
-    _tl_params2: dict = {"local": True, "limit": body.get("limit", 20)}
-    if body.get("untilId"):
-        _tl_params2["max_id"] = body["untilId"]
-    if body.get("sinceId"):
-        _tl_params2["min_id"] = body["sinceId"]
-    statuses = await mk.public_timeline(**_tl_params2)
-    return masto_statuses_to_mk_notes(statuses)
 
+    # ENABLE_LOCAL_TIMELINE の値に応じて LTL の可否を判定
+    ltl_setting = settings.ENABLE_LOCAL_TIMELINE.lower()
+
+    if ltl_setting == "false":
+        # 強制無効
+        raise HTTPException(status_code=400, detail={
+            "error": {
+                "message": "Local timeline has been disabled.",
+                "code": "LTL_DISABLED",
+                "id": "45a6eb02-7695-4393-b023-dd3be9aaaefd",
+                "kind": "client",
+            }
+        })
+    elif ltl_setting == "auto":
+        # 上流インスタンスの機能を確認（キャッシュ TTL 3時間）
+        if token:
+            result = await crud.get_token_with_user(db, token)
+            if not result:
+                result = await crud.get_api_key_by_key(db, token)
+                if result:
+                    from sqlalchemy import select as _sel
+                    from app.db.models import User as _User
+                    user_result = await db.execute(_sel(_User).where(_User.id == result.user_id))
+                    user = user_result.scalar_one_or_none()
+                else:
+                    user = None
+            else:
+                _, user = result
+            instance = (user.mastodon_instance if user else None) or settings.MASTODON_INSTANCE_URL
+        else:
+            instance = settings.MASTODON_INSTANCE_URL
+
+        ltl_ok = await supports_local_timeline(instance)
+        if not ltl_ok:
+            raise HTTPException(status_code=400, detail={
+                "error": {
+                    "message": "Local timeline is not available on this instance.",
+                    "code": "LTL_DISABLED",
+                    "id": "45a6eb02-7695-4393-b023-dd3be9aaaefd",
+                    "kind": "client",
+                }
+            })
+    # else: ltl_setting == "true" → 強制有効、チェックスキップ
+
+    if not token:
+        return []
+    mk = await _mastodon_client(token, db)
+    _tl_params: dict = {"local": True, "limit": body.get("limit", 20)}
+    if body.get("untilId"):
+        _tl_params["max_id"] = body["untilId"]
+    if body.get("sinceId"):
+        _tl_params["min_id"] = body["sinceId"]
+    statuses = await mk.public_timeline(**_tl_params)
+    return masto_statuses_to_mk_notes(statuses)
 
 @router.post("/notes/global-timeline")
 async def api_notes_global_timeline(request: Request, db: AsyncSession = Depends(get_db)):
@@ -542,37 +599,25 @@ async def api_notes_renotes(request: Request, db: AsyncSession = Depends(get_db)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
-    accounts = await mk.get_reblogged_by(body["noteId"])
-    from datetime import datetime
-    return [
-        {
-            "id": user["id"],
-            "userId": user["id"],
-            "createdAt": datetime.utcnow().isoformat(),
-            "user": user,
-            # ダミーデータをつける
-            "text": None,
-            "cw": None,
-            "visibility": "followers",
-            "localOnly": False,
-            "reactionAcceptance": None,
-            "renoteCount": 0,
-            "repliesCount": 0,
-            "reactionCount": 0,
-            "reactions": {},
-            "reactionEmojis": {},
-            "fileIds": [],
-            "files": [],
-            "replyId": None,
-            "renoteId": None,
-            "renote": None,
-            "clippedCount": 0,
-            "tags": [],
-            "emojis": {},
-            "poll": None,
-        }
-        for user in (masto_to_misskey_user_detailed(a) for a in accounts)
-    ]
+    note_id = body["noteId"]
+
+    # --- プラン B（採用）: reblogged_by のアカウントから Renote スタブを生成 ---
+    # Mastodon の reblogged_by はアカウント一覧のみ返すため、
+    # note_converter.mk_renote_stub で Misskey 互換 Renote オブジェクトに変換する。
+    accounts = await mk.get_reblogged_by(note_id)
+    return [mk_renote_stub(a, note_id) for a in accounts]
+
+    # --- プラン A（コメントアウト）: context の descendants から本物の Renote を返す ---
+    # get_context は replies も含むため reblog のみをフィルタする必要がある。
+    # descendants 内で reblog.id == note_id のものが renote に相当する。
+    #
+    # context = await mk.get_context(note_id)
+    # renotes = [
+    #     masto_status_to_mk_note(s)
+    #     for s in context.get("descendants", [])
+    #     if s.get("reblog") and s["reblog"].get("id") == note_id
+    # ]
+    # return renotes
 
 
 @router.post("/notes/replies")
@@ -640,7 +685,28 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
     note_id = body.get("noteId", "")
-    # ステータスを取得して emoji_reactions (Fedibird拡張) からリアクション一覧を構築
+    reaction = body.get("reaction")  # Misskey は特定リアクションを絞り込み指定できる
+
+    if reaction:
+        # 特定リアクションのユーザー一覧:
+        # GET /api/v1/statuses/{id}/reacted_by?emoji=:shortcode:
+        try:
+            accounts = await mk.get_reacted_by(note_id, reaction)
+            return [
+                {"id": a.get("id"), "reaction": reaction,
+                 "user": masto_to_misskey_user_lite(a)}
+                for a in (accounts if isinstance(accounts, list) else [])
+            ]
+        except Exception:
+            # reacted_by 未対応サーバーは favourited_by にフォールバック
+            accounts = await mk._get(f"statuses/{note_id}/favourited_by")
+            return [
+                {"id": a.get("id"), "reaction": reaction,
+                 "user": masto_to_misskey_user_lite(a)}
+                for a in (accounts if isinstance(accounts, list) else [])
+            ]
+
+    # reaction 未指定: ステータスの emoji_reactions から全リアクション一覧を構築
     status = await mk.get_status(note_id)
     fedibird_reactions = status.get("emoji_reactions") or []
     if fedibird_reactions:
@@ -650,20 +716,30 @@ async def api_reactions_list(request: Request, db: AsyncSession = Depends(get_db
             if not rkey:
                 continue
             # account_ids があれば各ユーザーを展開
-            for aid in (er.get("account_ids") or []):
-                result.append({"id": aid, "reaction": rkey, "user": {"id": aid}})
-            if not er.get("account_ids"):
-                # account_ids がない場合はカウント分だけダミーエントリ
-                for _ in range(er.get("count", 0)):
-                    result.append({"id": "", "reaction": rkey, "user": {}})
+            if er.get("account_ids"):
+                for aid in er["account_ids"]:
+                    result.append({"id": aid, "reaction": rkey, "user": {"id": aid}})
+            else:
+                # account_ids がない場合は reacted_by エンドポイントで取得を試みる
+                try:
+                    accounts = await mk.get_reacted_by(note_id, rkey)
+                    for a in (accounts if isinstance(accounts, list) else []):
+                        result.append({
+                            "id": a.get("id"), "reaction": rkey,
+                            "user": masto_to_misskey_user_lite(a),
+                        })
+                except Exception:
+                    # 取得できない場合はカウント分だけダミーエントリ
+                    for _ in range(er.get("count", 0)):
+                        result.append({"id": "", "reaction": rkey, "user": {}})
         return result
-    # フォールバック: favourited_by
+
+    # フォールバック: favourited_by（Fedibird 拡張非対応サーバー）
     accounts = await mk._get(f"statuses/{note_id}/favourited_by")
     return [
         {"id": a.get("id"), "reaction": "❤", "user": masto_to_misskey_user_lite(a)}
         for a in (accounts if isinstance(accounts, list) else [])
     ]
-
 
 @router.post("/notes/favorites/create")
 async def api_favorites_create(request: Request, db: AsyncSession = Depends(get_db)):

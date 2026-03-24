@@ -193,3 +193,48 @@ def masto_status_to_mk_note(status: dict) -> dict:
 
 def masto_statuses_to_mk_notes(statuses: list) -> list:
     return [masto_status_to_mk_note(s) for s in (statuses or [])]
+
+
+def mk_renote_stub(account: dict, original_note_id: str) -> dict:
+    """
+    `reblogged_by` で返ってきた Mastodon アカウントから
+    Misskey 互換の Renote スタブオブジェクトを生成する。
+
+    Mastodon の reblogged_by はアカウント一覧しか返さないため、
+    元ノートへの参照 (renoteId) だけを持つ最小限のノートを構築する。
+    id は (account_id, original_note_id) のペアから UUIDv5 で決定論的に生成。
+    """
+    import uuid as _uuid
+    rel_id = str(_uuid.uuid5(
+        _uuid.NAMESPACE_URL,
+        f"renote:{account.get('id', '')}:{original_note_id}",
+    ))
+    return {
+        "id": rel_id,
+        "createdAt": account.get("created_at", ""),
+        "userId": account.get("id", ""),
+        "user": masto_to_misskey_user_lite(account),
+        "text": None,
+        "cw": None,
+        "visibility": "followers",
+        "localOnly": False,
+        "reactionAcceptance": None,
+        "renoteCount": 0,
+        "repliesCount": 0,
+        "reactionCount": 0,
+        "reactions": {},
+        "reactionEmojis": {},
+        "fileIds": [],
+        "files": [],
+        "replyId": None,
+        "renoteId": original_note_id,
+        "renote": None,
+        "clippedCount": 0,
+        "tags": [],
+        "emojis": [],
+        "poll": None,
+        "myReaction": None,
+        "favourited": False,
+        "reblogged": True,
+        "bookmarked": False,
+    }

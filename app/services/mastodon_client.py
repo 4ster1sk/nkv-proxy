@@ -182,6 +182,18 @@ class MastodonClient:
     async def get_favourites(self, **params) -> list:
         return await self._get("favourites", params=params)  # type: ignore
 
+    # ── Reactions ─────────────────────────────────────────────────────────
+
+    async def get_reacted_by(self, status_id: str, emoji: str) -> list:
+        """
+        Fedibird 拡張: 特定の絵文字でリアクションしたユーザー一覧を取得。
+        GET /api/v1/statuses/{id}/reacted_by?emoji=:shortcode:
+        """
+        return await self._get(  # type: ignore
+            f"statuses/{status_id}/reacted_by",
+            params={"emoji": emoji},
+        )
+
     # ── Reblogs ─────────────────────────────────────────────────────────
 
     async def get_reblogged_by(self, status_id: str) -> list:

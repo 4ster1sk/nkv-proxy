@@ -484,10 +484,28 @@ class TestMisskeyCompatNotes:
         assert resp.status_code == 401
 
     def test_api_notes_local_timeline(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
-            MockClient.return_value.public_timeline = AsyncMock(return_value=[MASTO_STATUS])
-            resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
+        with patch("app.api.misskey_compat.supports_local_timeline",
+                   new=AsyncMock(return_value=True)):
+            with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+                MockClient.return_value.public_timeline = AsyncMock(return_value=[MASTO_STATUS])
+                resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
         assert resp.status_code == 200
+
+    def test_api_notes_local_timeline_disabled(self, client: TestClient):
+        """ENABLE_LOCAL_TIMELINE=false の場合は 400 を返す。"""
+        with patch.object(
+            __import__("app.core.config", fromlist=["settings"]).settings,
+            "ENABLE_LOCAL_TIMELINE", "false"
+        ):
+            resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
+        assert resp.status_code == 400
+
+    def test_api_notes_local_timeline_auto_disabled(self, client: TestClient):
+        """ENABLE_LOCAL_TIMELINE=auto で上流が LTL 非対応なら 400 を返す。"""
+        with patch("app.api.misskey_compat.supports_local_timeline",
+                   new=AsyncMock(return_value=False)):
+            resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
+        assert resp.status_code == 400
 
     def test_api_notes_global_timeline(self, client: TestClient):
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
