@@ -58,6 +58,7 @@ def _masto_notification_to_mk(data: dict) -> dict:
 
 async def _mastodon_sse_stream(
     mastodon_token: str, mastodon_instance: str, stream: str,
+    extra_params: dict | None = None,
 ) -> AsyncGenerator[tuple[str, dict], None]:
     """Mastodon SSE を購読して (event_name, data_dict) を yield する。切断時は再接続。"""
     # Mastodon SSE はパスベース: /api/v1/streaming/user, /api/v1/streaming/public etc.
@@ -66,7 +67,7 @@ async def _mastodon_sse_stream(
     headers: dict = {}
     if mastodon_token:
         headers["Authorization"] = f"Bearer {mastodon_token}"
-    params: dict = {}  # クエリパラメータ不要（パスで指定）
+    params: dict = extra_params.copy() if extra_params else {}
 
     while True:
         try:
@@ -150,7 +151,17 @@ class MisskeyStreamingProxy:
     async def _handle_connect(self, body: dict) -> None:
         channel_name = body.get("channel", "")
         channel_id = body.get("id", "")
-        stream_name = CHANNEL_TO_STREAM.get(channel_name, "")
+        params = body.get("params") or {}
+
+        # userList チャンネルは listId ごとに動的なストリームキーを使う
+        if channel_name == "userList":
+            list_id = params.get("listId", "")
+            stream_name = f"list:{list_id}" if list_id else ""
+            extra: dict | None = {"list": list_id} if list_id else None
+        else:
+            stream_name = CHANNEL_TO_STREAM.get(channel_name, "")
+            extra = None
+
         self._channels[channel_id] = stream_name
         await self._send({"type": "connected", "body": {"id": channel_id}})
         logger.debug("Channel connect: %s → %s (id=%s)", channel_name, stream_name, channel_id)
@@ -158,8 +169,11 @@ class MisskeyStreamingProxy:
             return
         if stream_name not in self._tasks:
             self._stream_channels[stream_name] = set()
+            # list:{id} ストリームは "list" パスに extra_params を渡す
+            sse_stream = stream_name.split(":")[0] if ":" in stream_name else stream_name
             task = asyncio.create_task(
-                self._sse_to_ws(stream_name), name=f"sse-{stream_name}"
+                self._sse_to_ws(stream_name, sse_stream=sse_stream, extra_params=extra),
+                name=f"sse-{stream_name}",
             )
             self._tasks[stream_name] = task
         self._stream_channels.setdefault(stream_name, set()).add(channel_id)
@@ -191,10 +205,13 @@ class MisskeyStreamingProxy:
             logger.warning("Error fetching status %s: %s", status_id, exc)
         return None
 
-    async def _sse_to_ws(self, stream_name: str) -> None:
+    async def _sse_to_ws(
+        self, stream_name: str, sse_stream: str | None = None, extra_params: dict | None = None
+    ) -> None:
         try:
             async for event_name, data in _mastodon_sse_stream(
-                self.mastodon_token, self.mastodon_instance, stream_name
+                self.mastodon_token, self.mastodon_instance,
+                sse_stream or stream_name, extra_params,
             ):
                 channel_ids = self._stream_channels.get(stream_name, set())
                 if not channel_ids:

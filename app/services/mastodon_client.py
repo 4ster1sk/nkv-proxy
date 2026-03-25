@@ -114,6 +114,35 @@ class MastodonClient:
     async def get_mutes(self, **params) -> list:
         return await self._get("mutes", params=params)  # type: ignore
 
+    # ── Lists ──────────────────────────────────────────────────────────
+    async def get_lists(self) -> list:
+        return await self._get("lists")  # type: ignore
+
+    async def get_list(self, list_id: str) -> dict:
+        return await self._get(f"lists/{list_id}")  # type: ignore
+
+    async def create_list(self, title: str) -> dict:
+        return await self._post("lists", json={"title": title})  # type: ignore
+
+    async def update_list(self, list_id: str, title: str) -> dict:
+        return await self._put_json(f"lists/{list_id}", json={"title": title})  # type: ignore
+
+    async def delete_list(self, list_id: str) -> dict:
+        return await self._delete(f"lists/{list_id}")  # type: ignore
+
+    async def get_list_accounts(self, list_id: str, **params) -> list:
+        return await self._get(f"lists/{list_id}/accounts", params=params)  # type: ignore
+
+    async def add_list_accounts(self, list_id: str, account_ids: list) -> dict:
+        return await self._post(f"lists/{list_id}/accounts", json={"account_ids": account_ids})  # type: ignore
+
+    async def remove_list_accounts(self, list_id: str, account_ids: list) -> dict:
+        return await self._delete_with_body(f"lists/{list_id}/accounts", json={"account_ids": account_ids})  # type: ignore
+
+    async def list_timeline(self, list_id: str, **params) -> list:
+        clean = {k: v for k, v in params.items() if v is not None}
+        return await self._get(f"timelines/list/{list_id}", params=clean)  # type: ignore
+
     # ── Statuses ───────────────────────────────────────────────────────
     async def get_status(self, status_id: str) -> dict:
         return await self._get(f"statuses/{status_id}")  # type: ignore
@@ -155,6 +184,28 @@ class MastodonClient:
 
     async def remove_emoji_reaction(self, status_id: str, emoji: str) -> dict:
         return await self._delete(f"statuses/{status_id}/emoji_reactions/{emoji}")  # type: ignore
+
+    async def _put_json(self, path: str, json: dict | None = None) -> dict:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon PUT %s", url)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(url, headers=self.headers, json=json)
+        if resp.status_code == 204:
+            return {}
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+
+    async def _delete_with_body(self, path: str, json: dict | None = None) -> dict:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon DELETE %s", url)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.request("DELETE", url, headers=self.headers, json=json)
+        if resp.status_code == 204:
+            return {}
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
 
     async def _put(self, path: str) -> dict:
         url = f"{self.base}/api/v1/{path}"

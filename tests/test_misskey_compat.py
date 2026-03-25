@@ -999,7 +999,6 @@ class TestUsersShow:
         assert resp.status_code == 200
         data = resp.json()
         assert data["host"] == "remote.example.com"
-        # search_accounts が "remoteuser@remote.example.com" で呼ばれているか確認
         MockClient.return_value.search_accounts.assert_called_once_with(
             "remoteuser@remote.example.com", limit=1
         )
@@ -1010,5 +1009,62 @@ class TestUsersShow:
             MockClient.return_value.search_accounts = AsyncMock(return_value=[local_account])
             resp = client.post("/api/users/show", json={**AUTH_BODY, "username": "remoteuser"})
         assert resp.status_code == 200
-        # host なし → search query もホストなし
         MockClient.return_value.search_accounts.assert_called_once_with("remoteuser", limit=1)
+
+
+class TestUserListsAPI:
+    MASTO_LIST = {"id": "list001", "title": "Friends", "replies_policy": "followed", "exclusive": False}
+
+    def test_lists_list(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_lists = AsyncMock(return_value=[self.MASTO_LIST])
+            resp = client.post("/api/users/lists/list", json=AUTH_BODY)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "list001"
+        assert data[0]["name"] == "Friends"
+
+    def test_lists_create(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.create_list = AsyncMock(return_value=self.MASTO_LIST)
+            resp = client.post("/api/users/lists/create", json={**AUTH_BODY, "name": "Friends"})
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Friends"
+
+    def test_lists_show(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_list = AsyncMock(return_value=self.MASTO_LIST)
+            resp = client.post("/api/users/lists/show", json={**AUTH_BODY, "listId": "list001"})
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "list001"
+
+    def test_lists_delete(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.delete_list = AsyncMock(return_value={})
+            resp = client.post("/api/users/lists/delete", json={**AUTH_BODY, "listId": "list001"})
+        assert resp.status_code == 200
+        assert resp.json() == {}
+
+    def test_lists_push(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.add_list_accounts = AsyncMock(return_value={})
+            resp = client.post("/api/users/lists/push", json={**AUTH_BODY, "listId": "list001", "userId": "user001"})
+        assert resp.status_code == 200
+        MockClient.return_value.add_list_accounts.assert_called_once_with("list001", ["user001"])
+
+    def test_lists_pull(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.remove_list_accounts = AsyncMock(return_value={})
+            resp = client.post("/api/users/lists/pull", json={**AUTH_BODY, "listId": "list001", "userId": "user001"})
+        assert resp.status_code == 200
+        MockClient.return_value.remove_list_accounts.assert_called_once_with("list001", ["user001"])
+
+    def test_user_list_timeline(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.list_timeline = AsyncMock(return_value=[MASTO_STATUS])
+            resp = client.post("/api/notes/user-list-timeline", json={**AUTH_BODY, "listId": "list001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "note001"
