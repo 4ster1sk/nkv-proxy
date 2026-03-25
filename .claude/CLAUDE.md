@@ -19,6 +19,15 @@ Misskey サードパーティークライアントからのリクエストを Ma
 
 GitHub へプッシュする際は **master ブランチに直接プッシュしない**。
 
+### 日時フォーマット
+
+Misskey クライアントに返す日時は必ず **`2026-03-20T10:12:58.728Z`** 形式（ミリ秒3桁 + `Z` サフィックス）にすること。
+Python の `.isoformat()` はデフォルトで `+00:00` 形式になるため、以下の形式を使うこと。
+
+```python
+datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+```
+
 ### テスト
 
 - 新機能・バグ修正を実装したら、対応するテストを `tests/` に追加すること
