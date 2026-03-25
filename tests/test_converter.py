@@ -7,6 +7,7 @@ from app.services.converter import (
     mk_notification_to_mastodon,
     mk_user_to_account,
 )
+from app.services.user_converter import masto_to_misskey_user_detailed, masto_to_misskey_user_lite
 from tests.conftest import SAMPLE_NOTE, SAMPLE_NOTIFICATION, SAMPLE_USER
 
 INSTANCE_URL = "https://misskey.example.com"
@@ -167,3 +168,54 @@ class TestNotificationConversion:
         unknown = {**SAMPLE_NOTIFICATION, "type": "achievementEarned"}
         notif = mk_notification_to_mastodon(unknown, INSTANCE_URL)
         assert notif == {}
+
+
+class TestUserConverter:
+    LOCAL_ACCOUNT = {
+        "id": "local001",
+        "username": "localuser",
+        "display_name": "Local User",
+        "acct": "localuser",
+        "avatar": "https://example.com/avatar.png",
+        "bot": False,
+        "note": "",
+        "fields": [],
+        "locked": False,
+        "followers_count": 0,
+        "following_count": 0,
+        "statuses_count": 0,
+        "created_at": "2023-01-01T00:00:00.000Z",
+    }
+    REMOTE_ACCOUNT = {
+        **LOCAL_ACCOUNT,
+        "id": "remote001",
+        "username": "remoteuser",
+        "acct": "remoteuser@remote.example.com",
+        "url": "https://remote.example.com/@remoteuser",
+    }
+
+    def test_local_user_host_is_none(self):
+        result = masto_to_misskey_user_lite(self.LOCAL_ACCOUNT)
+        assert result["host"] is None
+
+    def test_remote_user_host_extracted_from_acct(self):
+        result = masto_to_misskey_user_lite(self.REMOTE_ACCOUNT)
+        assert result["host"] == "remote.example.com"
+
+    def test_remote_user_instance_is_not_none(self):
+        result = masto_to_misskey_user_lite(self.REMOTE_ACCOUNT)
+        assert result["instance"] is not None
+
+    def test_local_user_instance_is_none(self):
+        result = masto_to_misskey_user_lite(self.LOCAL_ACCOUNT)
+        assert result["instance"] is None
+
+    def test_domain_field_fallback(self):
+        """acct に @ がなくても domain フィールドがあれば host を返す"""
+        account = {**self.LOCAL_ACCOUNT, "domain": "fallback.example.com"}
+        result = masto_to_misskey_user_lite(account)
+        assert result["host"] == "fallback.example.com"
+
+    def test_detailed_remote_user_host(self):
+        result = masto_to_misskey_user_detailed(self.REMOTE_ACCOUNT)
+        assert result["host"] == "remote.example.com"
