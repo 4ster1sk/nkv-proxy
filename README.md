@@ -3,13 +3,13 @@
 Misskey クライアントからのリクエストを Mastodon API に変換するプロキシサーバーです。
 
 ```
-Miria (Misskey クライアント)
+Misskey クライアントアプリ
   │  Misskey API / WebSocket Streaming
   ▼
 このプロキシ (FastAPI)
   │  Mastodon API / SSE Streaming
   ▼
-上流 Mastodon インスタンス（nekonoverse.org 等）
+上流 Mastodon インスタンス
 ```
 
 ---
@@ -57,7 +57,7 @@ uvicorn app.main:app --reload
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `PROXY_BASE_URL` | *(自動推定)* | このプロキシの公開URL。OAuth コールバック・NodeInfo 生成に使用 |
-| `MASTODON_INSTANCE_URL` | `https://nekonoverse.org` | 上流 Mastodon のデフォルトインスタンス（ユーザー個別設定がない場合のフォールバック） |
+| `MASTODON_INSTANCE_URL` | *(必須)* | 上流 Mastodon のデフォルトインスタンス（ユーザー個別設定がない場合のフォールバック） |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL DSN |
 | `APP_NAME` | `Misskey-Mastodon-Proxy` | アプリ名（認証画面等に表示） |
 | `INSTANCE_TITLE` | `Misskey-Mastodon Bridge` | `/api/v1/instance` に返すインスタンス名 |
@@ -73,9 +73,9 @@ uvicorn app.main:app --reload
 
 1. `http://your-proxy/register` でアカウント作成
 2. ログイン後、ダッシュボードで Mastodon インスタンスと連携
-3. Miria 等のクライアントからこのプロキシに接続
+3. Misskey クライアントアプリからこのプロキシに接続
 
-### Miria からの接続設定
+### クライアントアプリからの接続設定
 
 | 項目 | 値 |
 |------|-----|
@@ -85,10 +85,10 @@ uvicorn app.main:app --reload
 ### miAuth フロー
 
 ```
-Miria → GET /miauth/{sid}?name=...&permission=...
+クライアントアプリ → GET /miauth/{sid}?name=...&permission=...
        ↓ ログイン済みなら権限確認画面
-       ↓ 「許可する」 → OAuthToken 発行 → Miria へ
-       ↓ 「拒否する」 → error=access_denied → Miria へ
+       ↓ 「許可する」 → OAuthToken 発行 → クライアントアプリへ
+       ↓ 「拒否する」 → error=access_denied → クライアントアプリへ
 ```
 
 ---
