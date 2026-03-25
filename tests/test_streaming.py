@@ -250,3 +250,140 @@ class TestChannelMapping:
         await proxy._handle_disconnect({"id": "ch1"})
         assert "ch1" not in proxy._channels
         task.cancel.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _fetch_status のテスト
+# ---------------------------------------------------------------------------
+
+class TestFetchStatus:
+    """_fetch_status: ID のみペイロードに対してフル status を取得する。"""
+
+    def _proxy(self):
+        ws = MagicMock()
+        return MisskeyStreamingProxy(ws, mastodon_token="tok", mastodon_instance="https://nekonoverse.org")
+
+    @pytest.mark.asyncio
+    async def test_fetch_status_success(self):
+        """200 OK でフル status を返す。"""
+        from unittest.mock import patch
+        proxy = self._proxy()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = MASTO_STATUS
+
+        with patch("app.services.streaming.httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_resp)
+            result = await proxy._fetch_status("status001")
+
+        assert result == MASTO_STATUS
+
+    @pytest.mark.asyncio
+    async def test_fetch_status_not_found(self):
+        """404 の場合は None を返す。"""
+        from unittest.mock import patch
+        proxy = self._proxy()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+
+        with patch("app.services.streaming.httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.get = AsyncMock(return_value=mock_resp)
+            result = await proxy._fetch_status("status001")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_status_network_error(self):
+        """ネットワークエラーの場合は None を返す。"""
+        from unittest.mock import patch
+        proxy = self._proxy()
+
+        with patch("app.services.streaming.httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+                side_effect=Exception("network error")
+            )
+            result = await proxy._fetch_status("status001")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_status_uses_bearer_token(self):
+        """Authorization ヘッダーにトークンを付与する。"""
+        from unittest.mock import patch
+        proxy = self._proxy()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = MASTO_STATUS
+
+        with patch("app.services.streaming.httpx.AsyncClient") as mock_client:
+            mock_get = AsyncMock(return_value=mock_resp)
+            mock_client.return_value.__aenter__.return_value.get = mock_get
+            await proxy._fetch_status("status001")
+
+        _, kwargs = mock_get.call_args
+        assert kwargs["headers"]["Authorization"] == "Bearer tok"
+
+
+# ---------------------------------------------------------------------------
+# ID のみペイロード（Nekonoverse 形式）のテスト
+# ---------------------------------------------------------------------------
+
+class TestThinPayload:
+    """Nekonoverse の SSE は id のみを送るため、フル status を取得して変換する。"""
+
+    @pytest.mark.asyncio
+    async def test_thin_payload_triggers_fetch_and_sends_note(self):
+        """update イベントで id のみのペイロードが来たら _fetch_status を呼び note を送信する。"""
+        from unittest.mock import patch
+        ws = AsyncMock()
+        proxy = MisskeyStreamingProxy(ws, "tok", "https://nekonoverse.org")
+        proxy._stream_channels["user"] = {"ch1"}
+
+        async def fake_sse(*args, **kwargs):
+            yield "update", {"id": "status001"}
+
+        proxy._fetch_status = AsyncMock(return_value=MASTO_STATUS)
+        with patch("app.services.streaming._mastodon_sse_stream", fake_sse):
+            await proxy._sse_to_ws("user")
+
+        proxy._fetch_status.assert_called_once_with("status001")
+        ws.send_text.assert_called_once()
+        sent = json.loads(ws.send_text.call_args[0][0])
+        assert sent["type"] == "channel"
+        assert sent["body"]["type"] == "note"
+        assert sent["body"]["body"]["id"] == "status001"
+
+    @pytest.mark.asyncio
+    async def test_thin_payload_fetch_failure_skips_event(self):
+        """_fetch_status が None を返した場合はイベントをスキップして送信しない。"""
+        from unittest.mock import patch
+        ws = AsyncMock()
+        proxy = MisskeyStreamingProxy(ws, "tok", "https://nekonoverse.org")
+        proxy._stream_channels["user"] = {"ch1"}
+
+        async def fake_sse(*args, **kwargs):
+            yield "update", {"id": "status001"}
+
+        proxy._fetch_status = AsyncMock(return_value=None)
+        with patch("app.services.streaming._mastodon_sse_stream", fake_sse):
+            await proxy._sse_to_ws("user")
+
+        ws.send_text.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_full_payload_skips_fetch(self):
+        """フル status が来た場合は _fetch_status を呼ばずにそのまま変換する。"""
+        from unittest.mock import patch
+        ws = AsyncMock()
+        proxy = MisskeyStreamingProxy(ws, "tok", "https://nekonoverse.org")
+        proxy._stream_channels["user"] = {"ch1"}
+
+        async def fake_sse(*args, **kwargs):
+            yield "update", MASTO_STATUS
+
+        proxy._fetch_status = AsyncMock()
+        with patch("app.services.streaming._mastodon_sse_stream", fake_sse):
+            await proxy._sse_to_ws("user")
+
+        proxy._fetch_status.assert_not_called()
+        ws.send_text.assert_called_once()
