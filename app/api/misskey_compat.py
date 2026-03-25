@@ -1201,7 +1201,7 @@ def _masto_list_to_mk(masto: dict) -> dict:
     """Mastodon list オブジェクト → Misskey UserList"""
     return {
         "id": masto.get("id", ""),
-        "createdAt": "",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
         "name": masto.get("title", ""),
         "userIds": [],
         "isPublic": False,
