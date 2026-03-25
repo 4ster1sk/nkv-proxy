@@ -10,10 +10,11 @@ Authorization: Bearer ヘッダーのどちらでも受け付ける。
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.db import crud
@@ -23,9 +24,9 @@ from app.services.mastodon_client import MastodonClient
 from app.services.misskey_client import MisskeyClient
 from app.services.note_converter import (
     _build_reaction_key,
-    mk_renote_stub,
     masto_status_to_mk_note,
     masto_statuses_to_mk_notes,
+    mk_renote_stub,
 )
 from app.services.user_converter import (
     masto_to_misskey_user_detailed,
@@ -499,6 +500,7 @@ async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(
                 result = await crud.get_api_key_by_key(db, token)
                 if result:
                     from sqlalchemy import select as _sel
+
                     from app.db.models import User as _User
                     user_result = await db.execute(_sel(_User).where(_User.id == result.user_id))
                     user = user_result.scalar_one_or_none()

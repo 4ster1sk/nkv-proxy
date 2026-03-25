@@ -1,4 +1,6 @@
 import asyncio
+import sys
+import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -6,17 +8,16 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
+from app.db.database import Base
+from app.db import models  # noqa: F401 — テーブル登録
+
 # alembic.ini の設定を読み込む
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# モデルの Base を読み込んでメタデータを渡す
-import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.db.database import Base
-from app.db import models  # noqa: F401 — テーブル登録
 
 target_metadata = Base.metadata
 
