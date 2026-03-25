@@ -13,7 +13,7 @@
   GET  /dashboard                  - ウェルカムページ（認証済みアプリ一覧 + Mastodon連携）
   POST /dashboard/mastodon-connect - Mastodon OAuth 開始
   GET  /auth/mastodon/callback     - Mastodon OAuth コールバック
-  GET  /miauth/{sid}               - Miriaからの認証 → /login?next={sid} へリダイレクト
+  GET  /miauth/{sid}               - クライアントからの認証 → /login?next={sid} へリダイレクト
   GET  /oauth/authorize            - Mastodon OAuth 認可開始
   POST /api/v1/apps                - アプリ登録
   POST /oauth/token                - code → access_token
@@ -828,7 +828,7 @@ async def dashboard_regenerate_api_key(
 
 
 # ---------------------------------------------------------------------------
-# GET /miauth/{session_id}  — Miriaからの認証エントリポイント
+# GET /miauth/{session_id}  — クライアントからの認証エントリポイント
 # ---------------------------------------------------------------------------
 
 @router.get("/miauth/{session_id}")
@@ -841,7 +841,7 @@ async def miauth_entry(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Miria等のクライアントが叩く認証エントリポイント。
+    Misskey クライアントが叩く認証エントリポイント。
     - ログイン済み: 権限確認画面を表示（許可する / 拒否する）
     - 未ログイン:   /login?next={session_id} へリダイレクト
     """

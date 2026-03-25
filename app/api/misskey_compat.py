@@ -221,8 +221,10 @@ async def api_meta(request: Request):
         # ────────────────────────────────────────────────────────
         "wordMuteLimit":             upstream_policies.get("wordMuteLimit", 200),
         "webhookLimit":              upstream_policies.get("webhookLimit", 3),
-        "clipLimit":                 upstream_policies.get("clipLimit", 10),
-        "noteEachClipsLimit":        upstream_policies.get("noteEachClipsLimit", 200),
+        # ── クリップ機能なし ──────────────────────────────────────
+        "clipLimit":                 0,
+        "noteEachClipsLimit":        0,
+        # ────────────────────────────────────────────────────────
         "userListLimit":             upstream_policies.get("userListLimit", 10),
         "userEachUserListsLimit":    upstream_policies.get("userEachUserListsLimit", 50),
         "rateLimitFactor":           upstream_policies.get("rateLimitFactor", 1),
@@ -232,12 +234,17 @@ async def api_meta(request: Request):
         "canImportFollowing":        upstream_policies.get("canImportFollowing", False),
         "canImportMuting":           upstream_policies.get("canImportMuting", False),
         "canImportUserLists":        upstream_policies.get("canImportUserLists", False),
-        "chatAvailability":          upstream_policies.get("chatAvailability", "available"),
-        "uploadableFileTypes":       upstream_policies.get("uploadableFileTypes", [
-            "text/*", "application/json", "image/*", "video/*", "audio/*",
-        ]),
-        "noteDraftLimit":            upstream_policies.get("noteDraftLimit", 10),
-        "scheduledNoteLimit":        upstream_policies.get("scheduledNoteLimit", 1),
+        # ── チャット・ノートドラフト・スケジュール投稿なし ────────
+        "chatAvailability":          "unavailable",
+        "uploadableFileTypes":       [
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+            "image/avif", "image/svg+xml",
+            "video/mp4", "video/mpeg", "video/webm", "video/quicktime",
+            "audio/mpeg", "audio/ogg", "audio/wav", "audio/flac", "audio/aac",
+        ],
+        "noteDraftLimit":            0,
+        "scheduledNoteLimit":        0,
+        # ────────────────────────────────────────────────────────
         "watermarkAvailable":        upstream_policies.get("watermarkAvailable", False),
         "fileSizeLimit":             upstream_policies.get("fileSizeLimit", 50),
     }
@@ -635,14 +642,15 @@ async def api_notes_replies(request: Request, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/notes/search")
-async def api_notes_search(request: Request, db: AsyncSession = Depends(get_db)):
-    body = await _body(request)
-    token = _token(body, request)
-    if not token:
-        raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
-    result = await mk.search(body.get("query", ""), type="statuses", limit=body.get("limit", 20))
-    return masto_statuses_to_mk_notes(result.get("statuses", []))
+async def api_notes_search(request: Request):
+    raise HTTPException(status_code=400, detail={
+        "error": {
+            "message": "Note search is not available on this server.",
+            "code": "UNAVAILABLE",
+            "id": "a09c74c0-5b4e-4d60-9a6e-8b1e5a3c2d4f",
+            "kind": "client",
+        }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1180,3 +1188,57 @@ async def api_admin_abuse_reports(request: Request, db: AsyncSession = Depends(g
         return reports if isinstance(reports, list) else []
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# 未対応機能（アンテナ・チャンネル・クリップ）
+# ---------------------------------------------------------------------------
+
+def _unavailable_error(feature: str) -> HTTPException:
+    return HTTPException(status_code=400, detail={
+        "error": {
+            "message": f"{feature} is not available on this server.",
+            "code": "UNAVAILABLE",
+            "id": "a09c74c0-5b4e-4d60-9a6e-8b1e5a3c2d4f",
+            "kind": "client",
+        }
+    })
+
+
+# アンテナ
+@router.post("/antennas/list")
+@router.post("/antennas/show")
+@router.post("/antennas/create")
+@router.post("/antennas/update")
+@router.post("/antennas/delete")
+@router.post("/antennas/notes")
+async def api_antennas_unavailable(request: Request):
+    raise _unavailable_error("Antenna")
+
+
+# チャンネル
+@router.post("/channels/timeline")
+@router.post("/channels/show")
+@router.post("/channels/create")
+@router.post("/channels/update")
+@router.post("/channels/follow")
+@router.post("/channels/unfollow")
+@router.post("/channels/featured")
+@router.post("/channels/my-favorites")
+@router.post("/channels/search")
+async def api_channels_unavailable(request: Request):
+    raise _unavailable_error("Channel")
+
+
+# クリップ
+@router.post("/clips/list")
+@router.post("/clips/show")
+@router.post("/clips/create")
+@router.post("/clips/update")
+@router.post("/clips/delete")
+@router.post("/clips/add-note")
+@router.post("/clips/remove-note")
+@router.post("/clips/notes")
+@router.post("/clips/my-favorites")
+async def api_clips_unavailable(request: Request):
+    raise _unavailable_error("Clip")

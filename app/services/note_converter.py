@@ -42,7 +42,7 @@ def masto_status_to_mk_note(status: dict) -> dict:
     """
     Mastodon status → Misskey Note
 
-    Miria 等の Misskey クライアントが期待する Note フォーマットで返す。
+    Misskey クライアントが期待する Note フォーマットで返す。
     """
     if not status:
         return {}

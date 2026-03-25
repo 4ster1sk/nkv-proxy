@@ -9,10 +9,16 @@ Data:       GET /nodeinfo/2.0          → actual nodeinfo document
 
 import httpx
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 
 router = APIRouter(tags=["nodeinfo"])
+
+
+def _is_dart_client(request: Request) -> bool:
+    ua = request.headers.get("user-agent", "")
+    return ua.lower().startswith("dart/")
 
 
 def _proxy_base(request: Request) -> str:
@@ -31,8 +37,10 @@ def _proxy_base(request: Request) -> str:
 async def nodeinfo_discovery(request: Request):
     """
     Well-known discovery document。
-    href はこのプロキシ自身の /nodeinfo/2.0 を指す。
+    Dart クライアント以外からのアクセスは 404 を返す。
     """
+    if not _is_dart_client(request):
+        return JSONResponse(status_code=404, content={"error": "Not Found"})
     base = _proxy_base(request)
     return {
         "links": [
@@ -45,12 +53,15 @@ async def nodeinfo_discovery(request: Request):
 
 
 @router.get("/nodeinfo/2.0")
-async def nodeinfo():
+async def nodeinfo(request: Request):
     """
     NodeInfo 2.0 document。
+    Dart クライアント以外からのアクセスは 404 を返す。
     Misskey の /api/stats を叩いてユーザー数・投稿数を取得する。
     取得失敗時はゼロにフォールバックする。
     """
+    if not _is_dart_client(request):
+        return JSONResponse(status_code=404, content={"error": "Not Found"})
     user_count = 0
     post_count = 0
     try:

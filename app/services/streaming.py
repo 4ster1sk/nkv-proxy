@@ -2,8 +2,8 @@
 Misskey WebSocket ストリーミング互換レイヤー
 
 方向:
-  Miria (Misskey WS) ← ws://proxy/streaming?i=<token>
-  上流 Mastodon SSE  → GET https://nekonoverse.org/api/v1/streaming?stream=user
+  Misskey クライアント (WS) ← ws://proxy/streaming?i=<token>
+  上流 Mastodon SSE          → GET https://<instance>/api/v1/streaming?stream=user
 """
 
 from __future__ import annotations
