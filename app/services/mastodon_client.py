@@ -260,7 +260,14 @@ class MastodonClient:
 
     # ── Search ─────────────────────────────────────────────────────────
     async def search(self, q: str, **params) -> dict:
-        return await self._get("search", params={"q": q, **params})  # type: ignore
+        url = f"{self.base}/api/v2/search"
+        search_params = {"q": q, "resolve": "false", **params}
+        logger.debug("Mastodon GET %s params=%s", url, search_params)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=self.headers, params=search_params)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()  # type: ignore
 
     # ── Instance ───────────────────────────────────────────────────────
     async def get_instance(self) -> dict:
