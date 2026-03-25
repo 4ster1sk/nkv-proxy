@@ -87,7 +87,7 @@ def masto_to_misskey_user_lite(masto: dict) -> dict:
         "avatarBlurhash": None,
         "avatarDecorations": [],
         "isBot": masto.get("bot", False),
-        "isCat": False,
+        "isCat": masto.get("is_cat", False),
         "emojis": {},
         "onlineStatus": "unknown",
         "badgeRoles": [],
