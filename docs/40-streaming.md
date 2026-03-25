@@ -1,8 +1,3 @@
----
-paths:
-  - "app/**/*.py"
-  - "tests/**/*"
----
 ## WebSocket Streaming の設計
 
 ```

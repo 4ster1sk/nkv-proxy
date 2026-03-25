@@ -1,9 +1,3 @@
----
-paths: 
-  - "app/**/*.py"
-  - "alembic/**/*"
-  - "tests/**/*"
----
 ## API 変換の方針
 
 ### Misskey API → Mastodon API

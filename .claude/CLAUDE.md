@@ -2,16 +2,6 @@
 
 Misskey サードパーティークライアントからのリクエストを Mastodon API に変換するプロキシサーバー。
 
-```
-Misskey サードパーティークライアント
-  │  Misskey API / WebSocket Streaming
-  ▼
-nkv-proxy (FastAPI)
-  │  Mastodon API / SSE Streaming
-  ▼
-上流 Mastodon インスタンス（Nekonoverse 等）
-```
-
 **GitHub:** https://github.com/4ster1sk/nkv-proxy
 **主要言語:** Python 3.11+
 **フレームワーク:** FastAPI + SQLAlchemy (async) + PostgreSQL
@@ -23,8 +13,13 @@ nkv-proxy (FastAPI)
 ### 実装前にプランを立てる
 
 ユーザーから実装を求められた場合、**直接コードの変更を始めずに**まずプランを提示し、承認を得てから実装を開始すること。
+実装を開始する場合は、必ず**作業用ブランチを作成**してから作業を開始すること。
 
 ### ブランチ運用
 
 GitHub へプッシュする際は **master ブランチに直接プッシュしない**。
-必ず作業用ブランチを作成してからプッシュすること。
+
+### テスト
+
+- 新機能・バグ修正を実装したら、対応するテストを `tests/` に追加すること
+- 実装後は `pytest tests/ --ignore=tests/e2e` を実行してテストが通ることを確認すること
