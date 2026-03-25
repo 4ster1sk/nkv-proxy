@@ -43,7 +43,7 @@ def _masto_notification_to_mk(data: dict) -> dict:
         "id": account.get("id", ""), "username": account.get("username", ""),
         "name": account.get("display_name") or account.get("username", ""),
         "host": None, "avatarUrl": account.get("avatar"),
-        "isBot": account.get("bot", False), "isCat": False,
+        "isBot": account.get("bot", False), "isCat": account.get("is_cat", False),
         "emojis": {}, "onlineStatus": "unknown",
         "badgeRoles": [], "avatarDecorations": [],
     }
