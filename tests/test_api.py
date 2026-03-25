@@ -395,7 +395,7 @@ class TestMiscEndpoints:
         assert resp.json() == []
 
     def test_nodeinfo_discovery(self, client: TestClient):
-        resp = client.get("/.well-known/nodeinfo")
+        resp = client.get("/.well-known/nodeinfo", headers={"User-Agent": "Dart/3.8 (dart:io)"})
         assert resp.status_code == 200
         data = resp.json()
         assert "links" in data
@@ -406,17 +406,29 @@ class TestMiscEndpoints:
         assert "name" in resp.json()
 
 
+DART_UA = {"User-Agent": "Dart/3.8 (dart:io)"}
+
+
 class TestNodeInfo:
     def test_well_known_nodeinfo_discovery(self, client: TestClient):
-        resp = client.get("/.well-known/nodeinfo")
+        resp = client.get("/.well-known/nodeinfo", headers=DART_UA)
         assert resp.status_code == 200
         data = resp.json()
         assert "links" in data
         assert len(data["links"]) == 1
         link = data["links"][0]
         assert link["rel"] == "http://nodeinfo.diaspora.software/ns/schema/2.0"
-        # href はこのプロキシ自身の /nodeinfo/2.0 を指す（Misskeyではない）
         assert link["href"].endswith("/nodeinfo/2.0")
+
+    def test_well_known_nodeinfo_non_dart_ua_returns_404(self, client: TestClient):
+        """Dart クライアント以外は 404"""
+        resp = client.get("/.well-known/nodeinfo", headers={"User-Agent": "Mozilla/5.0"})
+        assert resp.status_code == 404
+
+    def test_well_known_nodeinfo_no_ua_returns_404(self, client: TestClient):
+        """UA なしも 404"""
+        resp = client.get("/.well-known/nodeinfo")
+        assert resp.status_code == 404
 
     def test_nodeinfo_20(self, client: TestClient):
         with patch("app.api.nodeinfo.httpx.AsyncClient") as MockClient:
@@ -429,7 +441,7 @@ class TestNodeInfo:
             MockClient.return_value.__aenter__ = AsyncMock(return_value=MockClient.return_value)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value.post = AsyncMock(return_value=mock_resp)
-            resp = client.get("/nodeinfo/2.0")
+            resp = client.get("/nodeinfo/2.0", headers=DART_UA)
         assert resp.status_code == 200
         data = resp.json()
         assert data["version"] == "2.0"
@@ -441,19 +453,24 @@ class TestNodeInfo:
         assert "emoji_reaction" in data["metadata"]["features"]
 
     def test_nodeinfo_20_misskey_unreachable(self, client: TestClient):
-        """Misskey が落ちていてもゼロにフォールバックして 200 を返す"""
+        """上流が落ちていてもゼロにフォールバックして 200 を返す"""
         with patch("app.api.nodeinfo.httpx.AsyncClient") as MockClient:
             MockClient.return_value.__aenter__ = AsyncMock(return_value=MockClient.return_value)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value.post = AsyncMock(side_effect=Exception("timeout"))
-            resp = client.get("/nodeinfo/2.0")
+            resp = client.get("/nodeinfo/2.0", headers=DART_UA)
         assert resp.status_code == 200
         data = resp.json()
         assert data["usage"]["users"]["total"] == 0
         assert data["usage"]["localPosts"] == 0
 
-    def test_well_known_href_points_to_proxy_not_misskey(self, client: TestClient):
-        """href が Misskey インスタンスではなくプロキシ自身を指している"""
-        resp = client.get("/.well-known/nodeinfo")
+    def test_nodeinfo_20_non_dart_ua_returns_404(self, client: TestClient):
+        """Dart クライアント以外は 404"""
+        resp = client.get("/nodeinfo/2.0", headers={"User-Agent": "curl/8.0"})
+        assert resp.status_code == 404
+
+    def test_well_known_href_points_to_proxy_not_upstream(self, client: TestClient):
+        """href が上流インスタンスではなくプロキシ自身を指している"""
+        resp = client.get("/.well-known/nodeinfo", headers=DART_UA)
         href = resp.json()["links"][0]["href"]
-        assert "nekonoverse.org" not in href  # Misskey のドメインを指してはいけない
+        assert "nekonoverse.org" not in href
