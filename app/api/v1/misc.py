@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.core.auth import get_current_user, get_mastodon_token
 from app.core.config import settings
@@ -102,34 +102,66 @@ async def custom_emojis(mk: MastodonClient = Depends(_client)):
         return []
 
 
-# ── Lists（アンテナ無効・ロール制限=0）────────────────────────────────
+# ── Lists ──────────────────────────────────────────────────────────────
 
 @router.get("/lists")
 async def get_lists(mk: MastodonClient = Depends(_client)):
-    return []
+    return await mk.get_lists()
 
 
 @router.post("/lists")
-async def create_list():
-    raise HTTPException(
-        status_code=403,
-        detail="List/antenna creation is disabled (role limit: 0)"
-    )
+async def create_list(request: Request, mk: MastodonClient = Depends(_client)):
+    body = await request.json()
+    return await mk.create_list(body.get("title", ""))
 
 
 @router.get("/lists/{list_id}")
-async def get_list(list_id: str):
-    raise HTTPException(status_code=404, detail="List not found")
+async def get_list(list_id: str, mk: MastodonClient = Depends(_client)):
+    return await mk.get_list(list_id)
+
+
+@router.put("/lists/{list_id}")
+async def update_list(list_id: str, request: Request, mk: MastodonClient = Depends(_client)):
+    body = await request.json()
+    return await mk.update_list(list_id, body.get("title", ""))
 
 
 @router.delete("/lists/{list_id}")
-async def delete_list(list_id: str):
-    raise HTTPException(status_code=404, detail="List not found")
+async def delete_list(list_id: str, mk: MastodonClient = Depends(_client)):
+    return await mk.delete_list(list_id)
 
 
 @router.get("/lists/{list_id}/accounts")
-async def list_accounts(list_id: str):
-    return []
+async def list_accounts(
+    list_id: str,
+    limit: int = Query(40, le=80),
+    mk: MastodonClient = Depends(_client),
+):
+    return await mk.get_list_accounts(list_id, limit=limit)
+
+
+@router.post("/lists/{list_id}/accounts")
+async def add_list_accounts(list_id: str, request: Request, mk: MastodonClient = Depends(_client)):
+    body = await request.json()
+    return await mk.add_list_accounts(list_id, body.get("account_ids", []))
+
+
+@router.delete("/lists/{list_id}/accounts")
+async def remove_list_accounts(list_id: str, request: Request, mk: MastodonClient = Depends(_client)):
+    body = await request.json()
+    return await mk.remove_list_accounts(list_id, body.get("account_ids", []))
+
+
+@router.get("/timelines/list/{list_id}")
+async def list_timeline(
+    list_id: str,
+    limit: int = Query(20, le=40),
+    max_id: str = Query(None),
+    since_id: str = Query(None),
+    min_id: str = Query(None),
+    mk: MastodonClient = Depends(_client),
+):
+    return await mk.list_timeline(list_id, limit=limit, max_id=max_id, since_id=since_id, min_id=min_id)
 
 
 # ── Misc ───────────────────────────────────────────────────────────────

@@ -348,27 +348,44 @@ class TestSearchEndpoints:
         assert resp.status_code == 200
 
 
-class TestListsEndpoints:
-    """Lists/Antenna endpoints should be disabled (antenna role limit = 0)."""
+SAMPLE_MASTO_LIST = {"id": "list001", "title": "My List", "replies_policy": "followed", "exclusive": False}
 
-    def test_get_lists_returns_empty(self, client: TestClient, auth_headers: dict):
+
+class TestListsEndpoints:
+    """Lists endpoints proxy to upstream (nekonoverse list API)."""
+
+    def test_get_lists(self, client: TestClient, auth_headers: dict):
         with patch("app.api.v1.misc.MastodonClient") as MockClient:
-            MockClient.return_value = MockClient.return_value
+            MockClient.return_value.get_lists = AsyncMock(return_value=[SAMPLE_MASTO_LIST])
             resp = client.get("/api/v1/lists", headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == [SAMPLE_MASTO_LIST]
 
-    def test_create_list_returns_403(self, client: TestClient, auth_headers: dict):
-        resp = client.post("/api/v1/lists", json={"title": "My List"}, headers=auth_headers)
-        assert resp.status_code == 403
+    def test_create_list(self, client: TestClient, auth_headers: dict):
+        with patch("app.api.v1.misc.MastodonClient") as MockClient:
+            MockClient.return_value.create_list = AsyncMock(return_value=SAMPLE_MASTO_LIST)
+            resp = client.post("/api/v1/lists", json={"title": "My List"}, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "My List"
 
-    def test_get_list_returns_404(self, client: TestClient, auth_headers: dict):
-        resp = client.get("/api/v1/lists/some-id", headers=auth_headers)
-        assert resp.status_code == 404
+    def test_get_list(self, client: TestClient, auth_headers: dict):
+        with patch("app.api.v1.misc.MastodonClient") as MockClient:
+            MockClient.return_value.get_list = AsyncMock(return_value=SAMPLE_MASTO_LIST)
+            resp = client.get("/api/v1/lists/list001", headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["id"] == "list001"
 
-    def test_delete_list_returns_404(self, client: TestClient, auth_headers: dict):
-        resp = client.delete("/api/v1/lists/some-id", headers=auth_headers)
-        assert resp.status_code == 404
+    def test_delete_list(self, client: TestClient, auth_headers: dict):
+        with patch("app.api.v1.misc.MastodonClient") as MockClient:
+            MockClient.return_value.delete_list = AsyncMock(return_value={})
+            resp = client.delete("/api/v1/lists/list001", headers=auth_headers)
+        assert resp.status_code == 200
+
+    def test_list_timeline(self, client: TestClient, auth_headers: dict):
+        with patch("app.api.v1.misc.MastodonClient") as MockClient:
+            MockClient.return_value.list_timeline = AsyncMock(return_value=[])
+            resp = client.get("/api/v1/timelines/list/list001", headers=auth_headers)
+        assert resp.status_code == 200
 
 
 class TestMiscEndpoints:

@@ -1194,6 +1194,125 @@ async def api_admin_abuse_reports(request: Request, db: AsyncSession = Depends(g
 
 
 # ---------------------------------------------------------------------------
+# /api/users/lists  & /api/notes/user-list-timeline
+# ---------------------------------------------------------------------------
+
+def _masto_list_to_mk(masto: dict) -> dict:
+    """Mastodon list オブジェクト → Misskey UserList"""
+    return {
+        "id": masto.get("id", ""),
+        "createdAt": "",
+        "name": masto.get("title", ""),
+        "userIds": [],
+        "isPublic": False,
+    }
+
+
+@router.post("/users/lists/list")
+async def api_users_lists_list(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    lists = await mk.get_lists()
+    return [_masto_list_to_mk(lst) for lst in lists]
+
+
+@router.post("/users/lists/show")
+async def api_users_lists_show(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    lst = await mk.get_list(body["listId"])
+    return _masto_list_to_mk(lst)
+
+
+@router.post("/users/lists/create")
+async def api_users_lists_create(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    lst = await mk.create_list(body.get("name", ""))
+    return _masto_list_to_mk(lst)
+
+
+@router.post("/users/lists/update")
+async def api_users_lists_update(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    lst = await mk.update_list(body["listId"], body.get("name", ""))
+    return _masto_list_to_mk(lst)
+
+
+@router.post("/users/lists/delete")
+async def api_users_lists_delete(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    await mk.delete_list(body["listId"])
+    return {}
+
+
+@router.post("/users/lists/push")
+async def api_users_lists_push(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    await mk.add_list_accounts(body["listId"], [body["userId"]])
+    return {}
+
+
+@router.post("/users/lists/pull")
+async def api_users_lists_pull(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    await mk.remove_list_accounts(body["listId"], [body["userId"]])
+    return {}
+
+
+@router.post("/users/lists/get-memberships")
+async def api_users_lists_get_memberships(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    accounts = await mk.get_list_accounts(body["listId"], limit=body.get("limit", 30))
+    return [masto_to_misskey_user_detailed(a) for a in accounts]
+
+
+@router.post("/notes/user-list-timeline")
+async def api_notes_user_list_timeline(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    statuses = await mk.list_timeline(
+        body["listId"],
+        limit=body.get("limit", 20),
+        max_id=body.get("untilId"),
+        since_id=body.get("sinceId"),
+    )
+    return masto_statuses_to_mk_notes(statuses)
+
+
+# ---------------------------------------------------------------------------
 # 未対応機能（アンテナ・チャンネル・クリップ）
 # ---------------------------------------------------------------------------
 
