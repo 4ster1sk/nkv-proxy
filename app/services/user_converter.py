@@ -49,19 +49,32 @@ def html_to_text(html: str | None) -> str:
 # UserLite  — ノートの user フィールド等に埋め込む軽量版
 # ---------------------------------------------------------------------------
 
+def _extract_host(masto: dict) -> str | None:
+    """
+    Mastodon account オブジェクトからリモートホストを抽出する。
+    acct フィールドが "user@host" 形式ならその host 部分を返す。
+    ローカルユーザー ("user" のみ) は None を返す。
+    """
+    acct = masto.get("acct", "")
+    if "@" in acct:
+        return acct.split("@", 1)[1]
+    return masto.get("domain") or None
+
+
 def masto_to_misskey_user_lite(masto: dict) -> dict:
     """
     Mastodon account → Misskey UserLite
 
     Misskey クライアントがノートの `user` フィールドとして期待する最小セット。
     """
+    host = _extract_host(masto)
     instance = (
         {
             "name": masto.get("server_name"),
             "softwareName": masto.get("server_software"),
             "softwareVersion": masto.get("server_software_version"),
         }
-        if masto.get("domain")
+        if host
         else None
     )
 
@@ -69,7 +82,7 @@ def masto_to_misskey_user_lite(masto: dict) -> dict:
         "id": masto.get("id", ""),
         "name": masto.get("display_name") or masto.get("username", ""),
         "username": masto.get("username", ""),
-        "host": masto.get("domain", None),
+        "host": host,
         "avatarUrl": masto.get("avatar") or masto.get("avatar_static"),
         "avatarBlurhash": None,
         "avatarDecorations": [],

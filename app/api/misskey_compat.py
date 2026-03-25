@@ -830,7 +830,10 @@ async def api_users_show(request: Request, db: AsyncSession = Depends(get_db)):
     if "userId" in body:
         account = await mk.get_account(body["userId"])
     else:
-        results = await mk.search_accounts(body.get("username", ""), limit=1)
+        username = body.get("username", "")
+        host = body.get("host")
+        query = f"{username}@{host}" if host else username
+        results = await mk.search_accounts(query, limit=1)
         account = results[0] if results else {}
     return masto_to_misskey_user_detailed(account)
 

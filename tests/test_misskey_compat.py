@@ -957,3 +957,58 @@ class TestMisskeyCompatMiAuth:
         resp = client.post("/api/miauth/11111111-1111-1111-1111-111111111111/check")
         assert resp.status_code == 200
         assert resp.json()["ok"] is False
+
+
+class TestUsersShow:
+    REMOTE_ACCOUNT = {
+        "id": "remote001",
+        "username": "remoteuser",
+        "display_name": "Remote User",
+        "acct": "remoteuser@remote.example.com",
+        "locked": False,
+        "bot": False,
+        "created_at": "2023-01-01T00:00:00.000Z",
+        "note": "",
+        "url": "https://remote.example.com/@remoteuser",
+        "avatar": "https://remote.example.com/avatar.png",
+        "avatar_static": "https://remote.example.com/avatar.png",
+        "header": None,
+        "followers_count": 5,
+        "following_count": 3,
+        "statuses_count": 20,
+        "fields": [],
+        "emojis": [],
+    }
+
+    def test_users_show_by_userid(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_account = AsyncMock(return_value=self.REMOTE_ACCOUNT)
+            resp = client.post("/api/users/show", json={**AUTH_BODY, "userId": "remote001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["host"] == "remote.example.com"
+
+    def test_users_show_by_username_and_host(self, client):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search_accounts = AsyncMock(return_value=[self.REMOTE_ACCOUNT])
+            resp = client.post("/api/users/show", json={
+                **AUTH_BODY,
+                "username": "remoteuser",
+                "host": "remote.example.com",
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["host"] == "remote.example.com"
+        # search_accounts が "remoteuser@remote.example.com" で呼ばれているか確認
+        MockClient.return_value.search_accounts.assert_called_once_with(
+            "remoteuser@remote.example.com", limit=1
+        )
+
+    def test_users_show_by_username_only(self, client):
+        local_account = {**self.REMOTE_ACCOUNT, "acct": "remoteuser", "id": "local001"}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search_accounts = AsyncMock(return_value=[local_account])
+            resp = client.post("/api/users/show", json={**AUTH_BODY, "username": "remoteuser"})
+        assert resp.status_code == 200
+        # host なし → search query もホストなし
+        MockClient.return_value.search_accounts.assert_called_once_with("remoteuser", limit=1)
