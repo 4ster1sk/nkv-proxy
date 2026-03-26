@@ -16,13 +16,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,7 +44,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -145,7 +145,7 @@ class MiAuthSession(Base):
         DateTime(timezone=True), nullable=False, default=_now
     )
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
 
     app: Mapped["RegisteredApp | None"] = relationship(back_populates="sessions")
@@ -161,8 +161,8 @@ class MiAuthSession(Base):
 class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     session_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("miauth_sessions.session_id", ondelete="SET NULL"),
@@ -177,6 +177,7 @@ class OAuthToken(Base):
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     scopes: Mapped[str] = mapped_column(
         Text, nullable=False, default="read write follow push"
@@ -193,10 +194,6 @@ class OAuthToken(Base):
 
     session: Mapped["MiAuthSession | None"] = relationship(back_populates="token")
     user: Mapped["User"] = relationship(back_populates="tokens")
-
-    __table_args__ = (
-        UniqueConstraint("access_token", name="uq_oauth_tokens_access_token"),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +224,7 @@ class MastodonOAuthState(Base):
     __tablename__ = "mastodon_oauth_states"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    state: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -245,7 +242,7 @@ class MastodonOAuthState(Base):
     )
     mastodon_instance: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
@@ -267,9 +264,10 @@ class ApiKey(Base):
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, default="Web UI テスト用")
-    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
