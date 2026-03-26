@@ -109,6 +109,33 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db
         run: alembic check
 
+      - name: Post help comment on failure
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # コメントの内容を組み立てる
+          COMMENT_BODY="⚠️ **Schema Drift Detected**
+          
+          モデル定義とマイグレーションの状態に差分があるようです。
+          このままだと環境間で不整合が起きる可能性があります。
+
+          お手数ですが、ローカル環境で以下を実行して
+          生成されたマイグレーションファイルをコミットしてください。
+
+          \`\`\`bash
+          alembic revision --autogenerate -m 'sync schema'
+          \`\`\`
+
+          念のため内容も軽く確認しておくと安心です。"
+
+          # GiteaのAPIを叩いてPRにコメントを投稿する
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\": \"$COMMENT_BODY\"}" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments"
+
 # ─────────────────────────────────────────
 # 4. Docker build 検証（push なし・全ブランチ）
 # ─────────────────────────────────────────
