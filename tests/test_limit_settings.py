@@ -118,6 +118,7 @@ class TestOtherLimitClamping:
 
     def _set_user_limits(self, tl: int | None, notif: int | None, other: int | None = None):
         from sqlalchemy import update
+
         from app.db.models import User
 
         async def _update():
