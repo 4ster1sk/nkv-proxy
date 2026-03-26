@@ -15,17 +15,23 @@ def _client(
     return MastodonClient(token, current_user.mastodon_instance)
 
 
+def _clamp(limit: int, user_max: int | None) -> int:
+    """limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
+    return min(limit, user_max or settings.API_LIMIT_MAX)
+
+
 # ── Notifications ──────────────────────────────────────────────────────
 
 @router.get("/notifications")
 async def get_notifications(
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     max_id: str = Query(None),
     since_id: str = Query(None),
     exclude_types: list[str] = Query(default=[]),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": limit}
+    params = {"limit": _clamp(limit, current_user.limit_max_notifications)}
     if max_id:
         params["max_id"] = max_id
     if since_id:
@@ -54,10 +60,10 @@ async def dismiss_notification(notification_id: str, mk: MastodonClient = Depend
 async def search(
     q: str = Query(...),
     type: str = Query(None),
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": limit}
+    params = {"limit": min(limit, settings.API_LIMIT_MAX)}
     if type:
         params["type"] = type
     return await mk.search(q, **params)
@@ -134,10 +140,10 @@ async def delete_list(list_id: str, mk: MastodonClient = Depends(_client)):
 @router.get("/lists/{list_id}/accounts")
 async def list_accounts(
     list_id: str,
-    limit: int = Query(40, le=80),
+    limit: int = Query(40, ge=1),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_list_accounts(list_id, limit=limit)
+    return await mk.get_list_accounts(list_id, limit=min(limit, 80))
 
 
 @router.post("/lists/{list_id}/accounts")
@@ -155,13 +161,20 @@ async def remove_list_accounts(list_id: str, request: Request, mk: MastodonClien
 @router.get("/timelines/list/{list_id}")
 async def list_timeline(
     list_id: str,
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     max_id: str = Query(None),
     since_id: str = Query(None),
     min_id: str = Query(None),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.list_timeline(list_id, limit=limit, max_id=max_id, since_id=since_id, min_id=min_id)
+    return await mk.list_timeline(
+        list_id,
+        limit=_clamp(limit, current_user.limit_max_tl),
+        max_id=max_id,
+        since_id=since_id,
+        min_id=min_id,
+    )
 
 
 # ── Misc ───────────────────────────────────────────────────────────────

@@ -64,6 +64,10 @@ class User(Base):
     is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # API limit 上限設定（NULL = グローバルデフォルトを使用）
+    limit_max_tl: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    limit_max_notifications: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )

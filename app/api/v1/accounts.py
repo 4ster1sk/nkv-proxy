@@ -5,6 +5,11 @@ from app.core.config import settings
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
 
+
+def _clamp_tl(limit: int, user: User) -> int:
+    """TL 系 limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
+    return min(limit, user.limit_max_tl or settings.API_LIMIT_MAX)
+
 router = APIRouter(prefix="/api/v1", tags=["accounts"])
 
 
@@ -62,10 +67,10 @@ async def update_credentials(
 @router.get("/accounts/search")
 async def search_accounts(
     q: str = Query(...),
-    limit: int = Query(40, le=80),
+    limit: int = Query(40, ge=1),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.search_accounts(q, limit=limit)
+    return await mk.search_accounts(q, limit=min(limit, 80))
 
 
 @router.get("/accounts/{account_id}")
@@ -76,12 +81,13 @@ async def get_account(account_id: str, mk: MastodonClient = Depends(_client)):
 @router.get("/accounts/{account_id}/statuses")
 async def account_statuses(
     account_id: str,
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     max_id: str = Query(None),
     since_id: str = Query(None),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": limit}
+    params = {"limit": _clamp_tl(limit, current_user)}
     if max_id:
         params["max_id"] = max_id
     if since_id:
