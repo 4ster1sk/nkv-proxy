@@ -7,6 +7,7 @@ from app.services.converter import (
     mk_notification_to_mastodon,
     mk_user_to_account,
 )
+from app.services.note_converter import masto_notification_to_mk
 from app.services.user_converter import masto_to_misskey_user_detailed, masto_to_misskey_user_lite
 from tests.conftest import SAMPLE_NOTE, SAMPLE_NOTIFICATION, SAMPLE_USER
 
@@ -168,6 +169,115 @@ class TestNotificationConversion:
         unknown = {**SAMPLE_NOTIFICATION, "type": "achievementEarned"}
         notif = mk_notification_to_mastodon(unknown, INSTANCE_URL)
         assert notif == {}
+
+
+MASTO_ACCOUNT = {
+    "id": "muser001",
+    "username": "mastouser",
+    "display_name": "Masto User",
+    "acct": "mastouser",
+    "avatar": "https://example.com/avatar.png",
+    "bot": False,
+}
+
+MASTO_STATUS = {
+    "id": "mstatus001",
+    "created_at": "2024-01-01T00:00:00.000Z",
+    "content": "<p>Hello</p>",
+    "spoiler_text": "",
+    "visibility": "public",
+    "sensitive": False,
+    "in_reply_to_id": None,
+    "replies_count": 0, "reblogs_count": 0, "favourites_count": 0,
+    "favourited": False, "reblogged": False, "bookmarked": False,
+    "reblog": None, "poll": None,
+    "media_attachments": [], "mentions": [], "tags": [], "emojis": [],
+    "account": MASTO_ACCOUNT,
+}
+
+MASTO_NOTIFICATION = {
+    "id": "mnotif001",
+    "type": "favourite",
+    "created_at": "2024-06-01T10:00:00.000Z",
+    "account": MASTO_ACCOUNT,
+    "status": MASTO_STATUS,
+}
+
+
+class TestMastoNotificationToMk:
+    def test_favourite_maps_to_reaction(self):
+        result = masto_notification_to_mk(MASTO_NOTIFICATION)
+        assert result is not None
+        assert result["type"] == "reaction"
+        assert result["reaction"] == "❤"
+
+    def test_fedibird_emoji_reaction(self):
+        notif = {**MASTO_NOTIFICATION, "type": "emoji_reaction", "emoji": ":blobcat:"}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "reaction"
+        assert result["reaction"] == ":blobcat:"
+
+    def test_reblog_maps_to_renote(self):
+        notif = {**MASTO_NOTIFICATION, "type": "reblog"}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "renote"
+
+    def test_follow_maps_to_follow(self):
+        notif = {**MASTO_NOTIFICATION, "type": "follow", "status": None}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "follow"
+        assert result.get("note") is None
+
+    def test_mention_without_reply_maps_to_mention(self):
+        notif = {**MASTO_NOTIFICATION, "type": "mention"}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "mention"
+
+    def test_mention_with_in_reply_to_maps_to_reply(self):
+        reply_status = {**MASTO_STATUS, "in_reply_to_id": "original001"}
+        notif = {**MASTO_NOTIFICATION, "type": "mention", "status": reply_status}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "reply"
+
+    def test_follow_request_maps(self):
+        notif = {**MASTO_NOTIFICATION, "type": "follow_request", "status": None}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "receiveFollowRequest"
+
+    def test_poll_maps_to_poll_ended(self):
+        notif = {**MASTO_NOTIFICATION, "type": "poll"}
+        result = masto_notification_to_mk(notif)
+        assert result is not None
+        assert result["type"] == "pollEnded"
+
+    def test_unsupported_type_returns_none(self):
+        notif = {**MASTO_NOTIFICATION, "type": "admin.sign_up"}
+        assert masto_notification_to_mk(notif) is None
+
+    def test_status_type_returns_none(self):
+        notif = {**MASTO_NOTIFICATION, "type": "status"}
+        assert masto_notification_to_mk(notif) is None
+
+    def test_has_required_fields(self):
+        result = masto_notification_to_mk(MASTO_NOTIFICATION)
+        assert result is not None
+        assert result["id"] == "mnotif001"
+        assert result["createdAt"] == "2024-06-01T10:00:00.000Z"
+        assert result["userId"] == "muser001"
+        assert result["user"]["username"] == "mastouser"
+        assert "isRead" in result
+        assert "note" in result
+
+    def test_note_is_converted(self):
+        result = masto_notification_to_mk(MASTO_NOTIFICATION)
+        assert result is not None
+        assert result["note"]["id"] == "mstatus001"
 
 
 class TestUserConverter:

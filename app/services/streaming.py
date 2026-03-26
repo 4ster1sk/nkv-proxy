@@ -16,7 +16,7 @@ from typing import AsyncGenerator
 import httpx
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.services.note_converter import masto_status_to_mk_note
+from app.services.note_converter import masto_notification_to_mk, masto_status_to_mk_note
 
 logger = logging.getLogger(__name__)
 
@@ -33,26 +33,20 @@ CHANNEL_TO_STREAM: dict[str, str] = {
 
 
 def _masto_notification_to_mk(data: dict) -> dict:
-    type_map = {
-        "mention": "reply", "reblog": "renote", "favourite": "reaction",
-        "follow": "follow", "poll": "pollEnded", "update": "noteUpdated",
-    }
-    mk_type = type_map.get(data.get("type", ""), "mention")
-    account = data.get("account") or {}
-    notifier = {
-        "id": account.get("id", ""), "username": account.get("username", ""),
-        "name": account.get("display_name") or account.get("username", ""),
-        "host": None, "avatarUrl": account.get("avatar"),
-        "isBot": account.get("bot", False), "isCat": account.get("is_cat", False),
-        "emojis": {}, "onlineStatus": "unknown",
-        "badgeRoles": [], "avatarDecorations": [],
-    }
-    result: dict = {
-        "id": data.get("id", ""), "createdAt": data.get("created_at", ""),
-        "type": mk_type, "userId": account.get("id", ""), "user": notifier,
-    }
-    if data.get("status"):
-        result["note"] = masto_status_to_mk_note(data["status"])
+    """Mastodon SSE 通知イベント → Misskey 通知形式。masto_notification_to_mk の薄いラッパー。"""
+    result = masto_notification_to_mk(data)
+    if result is None:
+        # 未対応 type はデフォルトの mention として扱う
+        account = data.get("account") or {}
+        from app.services.user_converter import masto_to_misskey_user_lite
+        result = {
+            "id": data.get("id", ""),
+            "createdAt": data.get("created_at", ""),
+            "isRead": False,
+            "type": "mention",
+            "userId": account.get("id", ""),
+            "user": masto_to_misskey_user_lite(account),
+        }
     return result
 
 
