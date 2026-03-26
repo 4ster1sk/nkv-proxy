@@ -16,7 +16,10 @@ from typing import AsyncGenerator
 import httpx
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.services.note_converter import masto_notification_to_mk, masto_status_to_mk_note
+from app.services.note_converter import (
+    masto_notification_to_mk,
+    masto_status_to_mk_note,
+)
 
 logger = logging.getLogger(__name__)
 
