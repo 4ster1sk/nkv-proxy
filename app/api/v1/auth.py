@@ -560,6 +560,7 @@ async def dashboard(
         '<hr>'
         '<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem">'
         '<a href="/settings/2fa"><button class="btn btn-secondary btn-sm">2段階認証設定</button></a>'
+        '<a href="/settings/limits"><button class="btn btn-secondary btn-sm">limit 設定</button></a>'
         '<a href="/logout"><button class="btn btn-secondary btn-sm">ログアウト</button></a>'
         '</div>'
         '<hr>'
@@ -1287,6 +1288,90 @@ async def settings_2fa_disable(
     await crud.disable_totp(db, user.id)
     await db.commit()
     return RedirectResponse(url=f"/settings/2fa?success={quote('2段階認証を無効にしました')}", status_code=302)
+
+
+# ---------------------------------------------------------------------------
+# GET /settings/limits  — limit 上限設定画面
+# ---------------------------------------------------------------------------
+
+@router.get("/settings/limits")
+async def settings_limits_page(
+    request: Request,
+    error: str = Query(default=""),
+    success: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _get_session_user(request, db)
+    if not result[0]:
+        return RedirectResponse(url="/login", status_code=302)
+    _, user = result
+
+    error_html = f'<div class="alert alert-error">⚠️ {error}</div>' if error else ""
+    success_html = f'<div class="alert alert-success">✅ {success}</div>' if success else ""
+    token_str = request.cookies.get(SESSION_COOKIE, "")
+
+    val_tl = user.limit_max_tl if user.limit_max_tl is not None else ""
+    val_notif = user.limit_max_notifications if user.limit_max_notifications is not None else ""
+
+    body = f"""
+<div class="card">
+  <div class="header"><h1>📊 limit 設定</h1><p>@{user.username}</p></div>
+  <div class="body">
+    {error_html}{success_html}
+    <p style="font-size:.9rem;color:#555;margin-bottom:1rem">
+      Mastodon API へ転送する <code>limit</code> パラメータの上限を設定します。<br>
+      空欄の場合はサーバーデフォルト（{settings.API_LIMIT_MAX}）が使われます。
+    </p>
+    <form method="post" action="/settings/limits">
+      <input type="hidden" name="token" value="{token_str}">
+      <div class="form-group">
+        <label>タイムライン limit 上限</label>
+        <input type="number" name="limit_max_tl" value="{val_tl}" min="1" max="80"
+               placeholder="未設定（デフォルト: {settings.API_LIMIT_MAX}）">
+      </div>
+      <div class="form-group">
+        <label>通知 limit 上限</label>
+        <input type="number" name="limit_max_notifications" value="{val_notif}" min="1" max="80"
+               placeholder="未設定（デフォルト: {settings.API_LIMIT_MAX}）">
+      </div>
+      <button type="submit" class="btn">保存</button>
+    </form>
+    <p class="note" style="margin-top:1rem"><a href="/dashboard">← ダッシュボードに戻る</a></p>
+  </div>
+</div>"""
+    return HTMLResponse(content=_page("limit 設定", body))
+
+
+@router.post("/settings/limits")
+async def settings_limits_save(
+    token: str = Form(...),
+    limit_max_tl: str = Form(default=""),
+    limit_max_notifications: str = Form(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    from urllib.parse import quote
+    result = await crud.get_token_with_user(db, token)
+    if result is None:
+        raise HTTPException(status_code=401)
+    _, user = result
+
+    def _parse(val: str) -> int | None:
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            n = int(val)
+            return max(1, min(n, 80))
+        except ValueError:
+            return None
+
+    await crud.set_user_limits(
+        db, user.id,
+        limit_max_tl=_parse(limit_max_tl),
+        limit_max_notifications=_parse(limit_max_notifications),
+    )
+    await db.commit()
+    return RedirectResponse(url=f"/settings/limits?success={quote('設定を保存しました')}", status_code=302)
 
 
 # ---------------------------------------------------------------------------

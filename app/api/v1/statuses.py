@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth import get_current_user, get_mastodon_token
+from app.core.config import settings
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
 
@@ -14,18 +15,24 @@ def _client(
     return MastodonClient(token, current_user.mastodon_instance)
 
 
+def _clamp_tl(limit: int, user: User) -> int:
+    """TL 系 limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
+    return min(limit, user.limit_max_tl or settings.API_LIMIT_MAX)
+
+
 # ── Timelines ──────────────────────────────────────────────────────────
 
 @router.get("/timelines/home")
 async def home_timeline(
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     max_id: str = Query(None),
     since_id: str = Query(None),
     until_id: str = Query(None),
     min_id: str = Query(None),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params: dict = {"limit": limit}
+    params: dict = {"limit": _clamp_tl(limit, current_user)}
     # until_id → max_id (Mastodon), since_id → min_id (Mastodon)
     if until_id:
         params["max_id"] = until_id
@@ -42,14 +49,15 @@ async def home_timeline(
 async def public_timeline(
     local: bool = Query(False),
     remote: bool = Query(False),
-    limit: int = Query(20, le=40),
+    limit: int = Query(20, ge=1),
     max_id: str = Query(None),
     since_id: str = Query(None),
     until_id: str = Query(None),
     min_id: str = Query(None),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params: dict = {"limit": limit, "local": local, "remote": remote}
+    params: dict = {"limit": _clamp_tl(limit, current_user), "local": local, "remote": remote}
     if until_id:
         params["max_id"] = until_id
     elif max_id:
@@ -155,13 +163,17 @@ async def unbookmark_status(status_id: str, mk: MastodonClient = Depends(_client
 
 @router.get("/bookmarks")
 async def get_bookmarks(
-    limit: int = Query(20, le=40), mk: MastodonClient = Depends(_client)
+    limit: int = Query(20, ge=1),
+    current_user: User = Depends(get_current_user),
+    mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_bookmarks(limit=limit)
+    return await mk.get_bookmarks(limit=_clamp_tl(limit, current_user))
 
 
 @router.get("/favourites")
 async def get_favourites(
-    limit: int = Query(20, le=40), mk: MastodonClient = Depends(_client)
+    limit: int = Query(20, ge=1),
+    current_user: User = Depends(get_current_user),
+    mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_favourites(limit=limit)
+    return await mk.get_favourites(limit=_clamp_tl(limit, current_user))

@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # ストリーミングデバッグログ（SSE受信データ・変換前後を出力）
     STREAMING_DEBUG: bool = False
 
+    # Mastodon API へ転送する limit パラメータの上限デフォルト値
+    # ユーザーごとの設定（limit_max_tl / limit_max_notifications）が優先される
+    API_LIMIT_MAX: int = 40
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
