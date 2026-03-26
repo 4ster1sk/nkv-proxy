@@ -97,9 +97,18 @@ class TestConvertEvent:
         assert mk_body["userId"] == "user002"
 
     def test_notification_mention_converts(self):
-        """Mastodon `notification` (mention) → Misskey `notification` (reply)。"""
+        """Mastodon `notification` (mention, in_reply_to_id なし) → Misskey `notification` (mention)。"""
         proxy = self._proxy()
         mk_event, mk_body = proxy._convert_event("notification", MASTO_MENTION)
+        assert mk_event == "notification"
+        assert mk_body["type"] == "mention"
+
+    def test_notification_mention_reply_converts(self):
+        """Mastodon `notification` (mention, in_reply_to_id あり) → Misskey `notification` (reply)。"""
+        proxy = self._proxy()
+        reply_status = {**MASTO_STATUS, "in_reply_to_id": "original001"}
+        mention_as_reply = {**MASTO_MENTION, "status": reply_status}
+        mk_event, mk_body = proxy._convert_event("notification", mention_as_reply)
         assert mk_event == "notification"
         assert mk_body["type"] == "reply"
 
@@ -154,10 +163,22 @@ class TestMastoNotificationToMk:
         assert "user" in result
         assert result["user"]["username"] == "liker"
 
-    def test_mention_maps_to_reply(self):
+    def test_favourite_has_reaction_field(self):
+        result = _masto_notification_to_mk(MASTO_NOTIFICATION)
+        assert result.get("reaction") == "❤"
+
+    def test_mention_maps_to_mention(self):
+        """in_reply_to_id がない mention は mention にマップされる。"""
         result = _masto_notification_to_mk(MASTO_MENTION)
-        assert result["type"] == "reply"
+        assert result["type"] == "mention"
         assert "note" in result
+
+    def test_mention_with_reply_maps_to_reply(self):
+        """in_reply_to_id がある mention は reply にマップされる。"""
+        reply_status = {**MASTO_STATUS, "in_reply_to_id": "original001"}
+        mention_as_reply = {**MASTO_MENTION, "status": reply_status}
+        result = _masto_notification_to_mk(mention_as_reply)
+        assert result["type"] == "reply"
 
     def test_follow_maps_to_follow(self):
         result = _masto_notification_to_mk(MASTO_FOLLOW)
@@ -173,6 +194,10 @@ class TestMastoNotificationToMk:
         result = _masto_notification_to_mk(MASTO_NOTIFICATION)
         assert result["id"] == "notif001"
         assert result["createdAt"] == "2024-01-01T00:00:00.000Z"
+
+    def test_notification_has_is_read(self):
+        result = _masto_notification_to_mk(MASTO_NOTIFICATION)
+        assert "isRead" in result
 
 
 # ---------------------------------------------------------------------------

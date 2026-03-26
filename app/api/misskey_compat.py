@@ -24,6 +24,7 @@ from app.services.mastodon_client import MastodonClient
 from app.services.misskey_client import MisskeyClient
 from app.services.note_converter import (
     _build_reaction_key,
+    masto_notification_to_mk,
     masto_status_to_mk_note,
     masto_statuses_to_mk_notes,
     mk_renote_stub,
@@ -441,11 +442,13 @@ async def api_i_notifications(request: Request, db: AsyncSession = Depends(get_d
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk_client = await _mastodon_client(token, db)
-    return await mk_client.get_notifications(
-        limit=body.get("limit", 20),
-        since_id=body.get("sinceId"),
-        max_id=body.get("untilId"),
-    )
+    params: dict = {"limit": body.get("limit", 20)}
+    if body.get("sinceId"):
+        params["min_id"] = body["sinceId"]
+    if body.get("untilId"):
+        params["max_id"] = body["untilId"]
+    masto_notifs = await mk_client.get_notifications(**params)
+    return [n for n in (masto_notification_to_mk(raw) for raw in masto_notifs) if n is not None]
 
 
 # ---------------------------------------------------------------------------

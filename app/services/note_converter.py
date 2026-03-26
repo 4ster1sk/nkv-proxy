@@ -195,6 +195,65 @@ def masto_statuses_to_mk_notes(statuses: list) -> list:
     return [masto_status_to_mk_note(s) for s in (statuses or [])]
 
 
+# ---------------------------------------------------------------------------
+# Notification conversion: Mastodon → Misskey
+# ---------------------------------------------------------------------------
+
+_MASTO_TO_MK_TYPE: dict[str, str | None] = {
+    "mention":              None,   # determined by in_reply_to_id (see below)
+    "reblog":               "renote",
+    "favourite":            "reaction",
+    "emoji_reaction":       "reaction",   # Fedibird extension
+    "follow":               "follow",
+    "follow_request":       "receiveFollowRequest",
+    "poll":                 "pollEnded",
+    "status":               None,   # new post from followed — no Misskey equivalent
+    "update":               None,   # status edit — no Misskey notification equivalent
+    "admin.sign_up":        None,
+    "admin.report":         None,
+}
+
+
+def masto_notification_to_mk(notif: dict) -> dict | None:
+    """
+    Mastodon notification → Misskey notification 形式に変換する。
+
+    未対応の type は None を返す（呼び出し元でフィルタリングする）。
+    """
+    masto_type = notif.get("type", "")
+    status = notif.get("status")
+
+    if masto_type == "mention":
+        # status に in_reply_to_id があれば reply、なければ mention
+        mk_type: str | None = "reply" if (status and status.get("in_reply_to_id")) else "mention"
+    else:
+        mk_type = _MASTO_TO_MK_TYPE.get(masto_type)
+        if mk_type is None:
+            return None
+
+    account = notif.get("account") or {}
+    user = masto_to_misskey_user_lite(account)
+
+    result: dict = {
+        "id": notif.get("id", ""),
+        "createdAt": notif.get("created_at", ""),
+        "isRead": False,
+        "type": mk_type,
+        "userId": account.get("id", ""),
+        "user": user,
+    }
+
+    if status:
+        result["note"] = masto_status_to_mk_note(status)
+
+    # reaction type には reaction フィールドが必要
+    if mk_type == "reaction":
+        # Fedibird emoji_reaction は emoji フィールドにショートコードが入る
+        result["reaction"] = notif.get("emoji") or "❤"
+
+    return result
+
+
 def mk_renote_stub(account: dict, original_note_id: str) -> dict:
     """
     `reblogged_by` で返ってきた Mastodon アカウントから
