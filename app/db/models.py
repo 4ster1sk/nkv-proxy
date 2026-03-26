@@ -16,13 +16,14 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -80,6 +81,10 @@ class User(Base):
     )
     mastodon_states: Mapped[list["MastodonOAuthState"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_users_username", "username"),
     )
 
 
@@ -145,7 +150,7 @@ class MiAuthSession(Base):
         DateTime(timezone=True), nullable=False, default=_now
     )
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
 
     app: Mapped["RegisteredApp | None"] = relationship(back_populates="sessions")
@@ -161,7 +166,7 @@ class MiAuthSession(Base):
 class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     access_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     session_id: Mapped[str | None] = mapped_column(
         String(36),
@@ -177,6 +182,7 @@ class OAuthToken(Base):
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     scopes: Mapped[str] = mapped_column(
         Text, nullable=False, default="read write follow push"
@@ -195,7 +201,7 @@ class OAuthToken(Base):
     user: Mapped["User"] = relationship(back_populates="tokens")
 
     __table_args__ = (
-        UniqueConstraint("access_token", name="uq_oauth_tokens_access_token"),
+        Index("ix_oauth_tokens_access_token", "access_token"),
     )
 
 
@@ -245,7 +251,7 @@ class MastodonOAuthState(Base):
     )
     mastodon_instance: Mapped[str] = mapped_column(Text, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
+        DateTime(timezone=True), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
@@ -253,6 +259,10 @@ class MastodonOAuthState(Base):
 
     user: Mapped["User"] = relationship(back_populates="mastodon_states")
     mastodon_app: Mapped["MastodonApp"] = relationship(back_populates="states")
+
+    __table_args__ = (
+        Index("ix_mastodon_oauth_states_state", "state"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +277,7 @@ class ApiKey(Base):
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, default="Web UI テスト用")
     key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
@@ -275,3 +286,7 @@ class ApiKey(Base):
     )
 
     user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("ix_api_keys_key", "key"),
+    )

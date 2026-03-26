@@ -70,7 +70,7 @@ class TestUserLimitSettings:
                 )
                 await s.commit()
 
-        asyncio.get_event_loop().run_until_complete(_update())
+        asyncio.run(_update())
 
     def test_user_limit_tl_is_respected(self, client: TestClient):
         """ユーザーが limit_max_tl=20 に設定している場合、limit=50 → 20 にクランプされる。"""
