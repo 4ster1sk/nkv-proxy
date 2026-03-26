@@ -8,7 +8,10 @@ from app.services.converter import (
     mk_user_to_account,
 )
 from app.services.note_converter import masto_notification_to_mk
-from app.services.user_converter import masto_to_misskey_user_detailed, masto_to_misskey_user_lite
+from app.services.user_converter import (
+    masto_to_misskey_user_detailed,
+    masto_to_misskey_user_lite,
+)
 from tests.conftest import SAMPLE_NOTE, SAMPLE_NOTIFICATION, SAMPLE_USER
 
 INSTANCE_URL = "https://misskey.example.com"
