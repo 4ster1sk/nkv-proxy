@@ -20,6 +20,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -44,7 +45,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -80,6 +81,10 @@ class User(Base):
     )
     mastodon_states: Mapped[list["MastodonOAuthState"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_users_username", "username"),
     )
 
 
@@ -162,7 +167,7 @@ class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
 
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     session_id: Mapped[str | None] = mapped_column(
         String(36),
         ForeignKey("miauth_sessions.session_id", ondelete="SET NULL"),
@@ -195,6 +200,10 @@ class OAuthToken(Base):
     session: Mapped["MiAuthSession | None"] = relationship(back_populates="token")
     user: Mapped["User"] = relationship(back_populates="tokens")
 
+    __table_args__ = (
+        Index("ix_oauth_tokens_access_token", "access_token"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # mastodon_apps  （上流MastodonインスタンスのOAuthアプリ登録キャッシュ）
@@ -224,7 +233,7 @@ class MastodonOAuthState(Base):
     __tablename__ = "mastodon_oauth_states"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    state: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    state: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -251,6 +260,10 @@ class MastodonOAuthState(Base):
     user: Mapped["User"] = relationship(back_populates="mastodon_states")
     mastodon_app: Mapped["MastodonApp"] = relationship(back_populates="states")
 
+    __table_args__ = (
+        Index("ix_mastodon_oauth_states_state", "state"),
+    )
+
 
 # ---------------------------------------------------------------------------
 # api_keys  — Web UI テスト用の共通 API キー
@@ -267,9 +280,13 @@ class ApiKey(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False, default="Web UI テスト用")
-    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )
 
     user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("ix_api_keys_key", "key"),
+    )
