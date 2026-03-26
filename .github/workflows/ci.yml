@@ -101,12 +101,12 @@ jobs:
 
       - name: Apply migrations
         env:
-          DATABASE_URL: postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db
+          DATABASE_URL: postgresql+asyncpg://proxy:proxy@${{ github.server_url == 'https://github.com' && 'localhost' || 'postgres' }}:5432/proxy_db
         run: alembic upgrade head
 
       - name: Check for schema drift
         env:
-          DATABASE_URL: postgresql+asyncpg://proxy:proxy@postgres:5432/proxy_db
+          DATABASE_URL: postgresql+asyncpg://proxy:proxy@${{ github.server_url == 'https://github.com' && 'localhost' || 'postgres' }}:5432/proxy_db
         run: alembic check
 
       - name: Post help comment on failure
