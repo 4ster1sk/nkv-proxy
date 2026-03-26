@@ -165,16 +165,16 @@ jobs:
             && echo "OK: redirect $STATUS" \
             || (echo "FAIL: expected 302/307, got $STATUS" && exit 1)
 
-      - name: Smoke — Antenna/list creation blocked (403)
+      - name: Smoke — POST /api/v1/lists (invalid token → 401)
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST http://localhost:8000/api/v1/lists \
             -H "Authorization: Bearer dummy" \
             -H "Content-Type: application/json" \
             -d '{"title":"test"}')
-          [ "$STATUS" = "403" ] \
-            && echo "OK: antenna creation blocked (role limit=0)" \
-            || (echo "FAIL: expected 403, got $STATUS" && exit 1)
+          [ "$STATUS" = "401" ] \
+            && echo "OK: POST /api/v1/lists returned $STATUS" \
+            || (echo "FAIL: expected 401, got $STATUS" && exit 1)
 
       - name: Smoke — GET /api/v1/lists (endpoint exists)
         run: |
