@@ -1,14 +1,9 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import get_current_user, get_mastodon_token
-from app.core.config import settings
+from app.core.limit_utils import clamp_other, clamp_tl
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
-
-
-def _clamp_tl(limit: int, user: User) -> int:
-    """TL 系 limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
-    return min(limit, user.limit_max_tl or settings.API_LIMIT_MAX)
 
 router = APIRouter(prefix="/api/v1", tags=["accounts"])
 
@@ -23,6 +18,7 @@ def _client(
 @router.get("/accounts/verify_credentials")
 async def verify_credentials(local_user: User = Depends(get_current_user)):
     """ローカルDBのユーザー情報を Mastodon Account 形式で返す。"""
+    from app.core.config import settings
     avatar = local_user.avatar_url or f"{settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL}/identicon/{local_user.id}"
     header = local_user.header_url or f"{settings.PROXY_BASE_URL or settings.MASTODON_INSTANCE_URL}/static-assets/transparent.png"
     return {
@@ -68,9 +64,10 @@ async def update_credentials(
 async def search_accounts(
     q: str = Query(...),
     limit: int = Query(40, ge=1),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.search_accounts(q, limit=min(limit, 80))
+    return await mk.search_accounts(q, limit=clamp_other(limit, current_user))
 
 
 @router.get("/accounts/{account_id}")
@@ -87,7 +84,7 @@ async def account_statuses(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": _clamp_tl(limit, current_user)}
+    params = {"limit": clamp_tl(limit, current_user)}
     if max_id:
         params["max_id"] = max_id
     if since_id:

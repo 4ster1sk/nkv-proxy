@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth import get_current_user, get_mastodon_token
-from app.core.config import settings
+from app.core.limit_utils import clamp_notifications, clamp_other, clamp_tl
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
 
@@ -15,11 +15,6 @@ def _client(
     return MastodonClient(token, current_user.mastodon_instance)
 
 
-def _clamp(limit: int, user_max: int | None) -> int:
-    """limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
-    return min(limit, user_max or settings.API_LIMIT_MAX)
-
-
 # ── Notifications ──────────────────────────────────────────────────────
 
 @router.get("/notifications")
@@ -31,7 +26,7 @@ async def get_notifications(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": _clamp(limit, current_user.limit_max_notifications)}
+    params = {"limit": clamp_notifications(limit, current_user)}
     if max_id:
         params["max_id"] = max_id
     if since_id:
@@ -61,9 +56,10 @@ async def search(
     q: str = Query(...),
     type: str = Query(None),
     limit: int = Query(20, ge=1),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params = {"limit": min(limit, settings.API_LIMIT_MAX)}
+    params = {"limit": clamp_other(limit, current_user)}
     if type:
         params["type"] = type
     return await mk.search(q, **params)
@@ -73,6 +69,7 @@ async def search(
 
 @router.get("/instance")
 async def get_instance(mk: MastodonClient = Depends(_client)):
+    from app.core.config import settings
     try:
         return await mk.get_instance()
     except Exception:
@@ -141,9 +138,10 @@ async def delete_list(list_id: str, mk: MastodonClient = Depends(_client)):
 async def list_accounts(
     list_id: str,
     limit: int = Query(40, ge=1),
+    current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_list_accounts(list_id, limit=min(limit, 80))
+    return await mk.get_list_accounts(list_id, limit=clamp_other(limit, current_user))
 
 
 @router.post("/lists/{list_id}/accounts")
@@ -170,7 +168,7 @@ async def list_timeline(
 ):
     return await mk.list_timeline(
         list_id,
-        limit=_clamp(limit, current_user.limit_max_tl),
+        limit=clamp_tl(limit, current_user),
         max_id=max_id,
         since_id=since_id,
         min_id=min_id,

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth import get_current_user, get_mastodon_token
-from app.core.config import settings
+from app.core.limit_utils import clamp_other, clamp_tl
 from app.db.models import User
 from app.services.mastodon_client import MastodonClient
 
@@ -13,11 +13,6 @@ def _client(
     current_user: User = Depends(get_current_user),
 ) -> MastodonClient:
     return MastodonClient(token, current_user.mastodon_instance)
-
-
-def _clamp_tl(limit: int, user: User) -> int:
-    """TL 系 limit をユーザー設定上限（未設定時はグローバルデフォルト）でクランプする。"""
-    return min(limit, user.limit_max_tl or settings.API_LIMIT_MAX)
 
 
 # ── Timelines ──────────────────────────────────────────────────────────
@@ -32,7 +27,7 @@ async def home_timeline(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params: dict = {"limit": _clamp_tl(limit, current_user)}
+    params: dict = {"limit": clamp_tl(limit, current_user)}
     # until_id → max_id (Mastodon), since_id → min_id (Mastodon)
     if until_id:
         params["max_id"] = until_id
@@ -57,7 +52,7 @@ async def public_timeline(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    params: dict = {"limit": _clamp_tl(limit, current_user), "local": local, "remote": remote}
+    params: dict = {"limit": clamp_tl(limit, current_user), "local": local, "remote": remote}
     if until_id:
         params["max_id"] = until_id
     elif max_id:
@@ -167,7 +162,7 @@ async def get_bookmarks(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_bookmarks(limit=_clamp_tl(limit, current_user))
+    return await mk.get_bookmarks(limit=clamp_other(limit, current_user))
 
 
 @router.get("/favourites")
@@ -176,4 +171,4 @@ async def get_favourites(
     current_user: User = Depends(get_current_user),
     mk: MastodonClient = Depends(_client),
 ):
-    return await mk.get_favourites(limit=_clamp_tl(limit, current_user))
+    return await mk.get_favourites(limit=clamp_other(limit, current_user))
