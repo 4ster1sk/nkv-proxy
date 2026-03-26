@@ -39,7 +39,12 @@ COPY --from=builder /install /usr/local
 
 # アプリケーションコードのみコピー
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 COPY scripts/ ./scripts/
+
+# entrypoint に実行権限を付与
+RUN chmod +x ./scripts/entrypoint.sh
 
 # 所有権を非rootユーザーに移す
 RUN chown -R appuser:appuser /app
@@ -74,11 +79,4 @@ except: \
 # ============================================================
 # 起動コマンド
 # ============================================================
-CMD ["sh", "-c", \
-     "uvicorn app.main:app \
-        --host 0.0.0.0 \
-        --port 8000 \
-        --workers ${WORKERS} \
-        --proxy-headers \
-        --forwarded-allow-ips='*' \
-        --log-level info"]
+CMD ["./scripts/entrypoint.sh"]

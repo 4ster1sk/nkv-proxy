@@ -39,7 +39,11 @@ async def _override_get_db():
 
 
 @pytest.fixture(autouse=True)
-def setup_test_db():
+def setup_test_db(request):
+    # no_db マーカーが付いたテストはDB セットアップをスキップ
+    if request.node.get_closest_marker("no_db"):
+        yield
+        return
     async def _create():
         async with _test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -68,9 +72,9 @@ def setup_test_db():
         async with _test_engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
 
-    asyncio.get_event_loop().run_until_complete(_create())
+    asyncio.run(_create())
     yield
-    asyncio.get_event_loop().run_until_complete(_drop())
+    asyncio.run(_drop())
 
 
 @pytest.fixture

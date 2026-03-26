@@ -41,10 +41,15 @@ def do_run_migrations(connection):
 
 
 async def run_async_migrations() -> None:
-    from app.core.config import settings
+    # os.environ を直接参照することで、テスト時の環境変数上書きに対応する
+    # (settings はモジュールロード時に一度だけ初期化されるシングルトンのため)
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        from app.core.config import settings
+        url = settings.DATABASE_URL
 
     cfg = config.get_section(config.config_ini_section, {})
-    cfg["sqlalchemy.url"] = settings.DATABASE_URL
+    cfg["sqlalchemy.url"] = url
 
     connectable = async_engine_from_config(
         cfg,
