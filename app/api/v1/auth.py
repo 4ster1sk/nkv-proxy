@@ -439,11 +439,11 @@ async def dashboard(
 
         # 権限リスト（折りたたみ表示用）
         scopes_list = [s.strip() for s in t.scopes.replace(",", " ").split() if s.strip()]
-        has_admin = any("admin" in s for s in scopes_list)
-        admin_count = sum(1 for s in scopes_list if "admin" in s)
+        has_admin = any(s.startswith(("read:admin", "write:admin", "admin:")) for s in scopes_list)
+        admin_count = sum(1 for s in scopes_list if s.startswith(("read:admin", "write:admin", "admin:")))
         perm_items = "".join(
             f'<li>✓ {_PERM_LABELS.get(s, s)}</li>'
-            for s in scopes_list if "admin" not in s
+            for s in scopes_list if not s.startswith(("read:admin", "write:admin", "admin:"))
         )
         if admin_count:
             perm_items += f'<li style="color:#856404">⚠️ 管理者権限 ({admin_count}項目)</li>'
@@ -1386,8 +1386,8 @@ def _miauth_confirm_page(
 ) -> str:
     """miAuth権限確認画面。"""
     perms = [p.strip() for p in permission.split(",") if p.strip()]
-    admin_perms = [p for p in perms if "admin" in p]
-    normal_perms = [p for p in perms if "admin" not in p]
+    admin_perms = [p for p in perms if p.startswith(("read:admin", "write:admin", "admin:"))]
+    normal_perms = [p for p in perms if not p.startswith(("read:admin", "write:admin", "admin:"))]
 
     perm_items = "\n".join(
         f'<li style="padding:.2rem 0">✓ {_PERM_LABELS.get(p, p)}</li>'
@@ -1437,11 +1437,8 @@ def _done_html(username: str, session_id: str, app_name: str) -> str:
   <div class="body">
     <p>ようこそ、<strong>@{username}</strong> さん！</p>
     <p style="margin:.8rem 0;font-size:.9rem;color:var(--text-2);">
-      {app_name} へのアクセスを許可しました。<br>以下のコードをアプリに入力してください。
+      {app_name} へのアクセスを許可しました。<br>アプリケーションに戻ってやっていってください。
     </p>
-    <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
-                padding:1rem;margin:.8rem 0;font-family:monospace;word-break:break-all;
-                font-size:.9rem;user-select:all">{session_id}</div>
     <p class="note">このページは閉じて構いません。</p>
   </div>
 </div>"""
