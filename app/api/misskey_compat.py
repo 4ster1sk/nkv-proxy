@@ -642,15 +642,17 @@ async def api_notes_replies(request: Request, db: AsyncSession = Depends(get_db)
 
 
 @router.post("/notes/search")
-async def api_notes_search(request: Request):
-    raise HTTPException(status_code=400, detail={
-        "error": {
-            "message": "Note search is not available on this server.",
-            "code": "UNAVAILABLE",
-            "id": "a09c74c0-5b4e-4d60-9a6e-8b1e5a3c2d4f",
-            "kind": "client",
-        }
-    })
+async def api_notes_search(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk = await _mastodon_client(token, db)
+    query = body.get("query", "")
+    limit = body.get("limit", 20)
+    result = await mk.search(query, type="statuses", limit=limit)
+    statuses = result.get("statuses", []) if isinstance(result, dict) else []
+    return masto_statuses_to_mk_notes(statuses)
 
 
 # ---------------------------------------------------------------------------

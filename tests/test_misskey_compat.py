@@ -533,10 +533,16 @@ class TestMisskeyCompatNotes:
         assert resp.status_code == 200
         assert resp.json()["id"] == "note001"
 
-    def test_api_notes_search_unavailable(self, client: TestClient):
-        resp = client.post("/api/notes/search", json={**AUTH_BODY, "query": "test"})
-        assert resp.status_code == 400
-        assert resp.json()["detail"]["error"]["code"] == "UNAVAILABLE"
+    def test_api_notes_search(self, client: TestClient):
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search = AsyncMock(
+                return_value={"statuses": [MASTO_STATUS], "accounts": [], "hashtags": []}
+            )
+            resp = client.post("/api/notes/search", json={**AUTH_BODY, "query": "test"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert data[0]["id"] == "note001"
 
 
 class TestMisskeyCompatReactions:
