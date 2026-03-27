@@ -1075,6 +1075,41 @@ class TestUserListsAPI:
         assert len(data) == 1
         assert data[0]["id"] == "note001"
 
+    def test_lists_show_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/show", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
+    def test_lists_update_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/update", json={**AUTH_BODY, "name": "new"})
+        assert resp.status_code == 400
+
+    def test_lists_delete_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/delete", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
+    def test_lists_push_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/push", json={**AUTH_BODY, "userId": "user001"})
+        assert resp.status_code == 400
+
+    def test_lists_pull_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/pull", json={**AUTH_BODY, "userId": "user001"})
+        assert resp.status_code == 400
+
+    def test_lists_get_memberships_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/users/lists/get-memberships", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
+    def test_user_list_timeline_missing_list_id(self, client):
+        """listId 省略で 400 を返す。"""
+        resp = client.post("/api/notes/user-list-timeline", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
 
 class TestNotesState:
 
