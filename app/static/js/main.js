@@ -1,4 +1,4 @@
-/* Misskey-Mastodon Proxy — common JS */
+/* NKV-Proxy — common JS */
 "use strict";
 
 // フォーム送信中はボタンを無効化

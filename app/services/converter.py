@@ -51,7 +51,7 @@ def fedibird_reaction_to_misskey(shortcode: str) -> str:
 def build_reaction_summary(reactions: dict[str, int]) -> list[dict]:
     """
     Build Mastodon-style emoji_reactions list (Fedibird extension) from
-    Misskey's reactions dict {"❤️": 3, ":awesome@misskey.io:": 1}.
+    Misskey's reactions dict {"❤️": 3, ":awesome@mi.tomadoi.com:": 1}.
     """
     result = []
     for reaction, count in reactions.items():
