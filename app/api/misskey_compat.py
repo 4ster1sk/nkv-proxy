@@ -484,9 +484,15 @@ async def api_i_favorites(request: Request, db: AsyncSession = Depends(get_db)):
         params["max_id"] = body["untilId"]
     statuses = await mk_client.get_bookmarks(**params)
     notes = masto_statuses_to_mk_notes(statuses)
-    for note in notes:
-        note["noteId"] = note["id"]
-    return notes
+    return [
+        {
+            "id": note["id"],
+            "createdAt": note["createdAt"],
+            "noteId": note["id"],
+            "note": note,
+        }
+        for note in notes
+    ]
 
 
 # ---------------------------------------------------------------------------

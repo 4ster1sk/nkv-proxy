@@ -1161,7 +1161,7 @@ class TestApShow:
 class TestIFavorites:
 
     def test_i_favorites_returns_notes(self, client):
-        """ブックマーク一覧をノート配列で返す。"""
+        """ブックマーク一覧を Misskey 互換のラップ構造で返す。"""
         with patch("app.api.misskey_compat.MastodonClient") as MockClient:
             MockClient.return_value.get_bookmarks = AsyncMock(return_value=[MASTO_STATUS])
             resp = client.post("/api/i/favorites", json={**AUTH_BODY})
@@ -1169,8 +1169,12 @@ class TestIFavorites:
         data = resp.json()
         assert isinstance(data, list)
         assert len(data) == 1
-        assert data[0]["id"] == "note001"
-        assert data[0]["noteId"] == data[0]["id"]
+        entry = data[0]
+        assert entry["id"] == "note001"
+        assert entry["noteId"] == "note001"
+        assert "createdAt" in entry
+        assert "note" in entry
+        assert entry["note"]["id"] == "note001"
 
     def test_i_favorites_empty(self, client):
         """ブックマークが空の場合は空配列を返す。"""
