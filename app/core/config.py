@@ -13,12 +13,12 @@ class Settings(BaseSettings):
     PROXY_BASE_URL: Optional[str] = None
 
     # アプリ名（認証画面・NodeInfo 等に表示）
-    APP_NAME: str = "Misskey-Mastodon-Proxy"
+    APP_NAME: str = "NKV-Proxy"
     APP_DESCRIPTION: str = "Misskey API to Mastodon API proxy"
     APP_CALLBACK_URL: Optional[str] = None
 
     # サーバー情報（/api/v1/instance, NodeInfo で返す）
-    INSTANCE_TITLE: str = "Misskey-Mastodon Bridge"
+    INSTANCE_TITLE: str = "NKV Proxy"
     INSTANCE_DESCRIPTION: str = "Misskey client compatible proxy for Mastodon"
     INSTANCE_VERSION: str = "4.3.0"
 

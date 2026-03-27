@@ -6,7 +6,7 @@
 | `MASTODON_INSTANCE_URL` | `https://nekonoverse.org` | 上流インスタンスのフォールバック URL |
 | `ENABLE_LOCAL_TIMELINE` | `auto` | `auto` / `true` / `false` |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL DSN |
-| `APP_NAME` | `Misskey-Mastodon-Proxy` | アプリ名 |
+| `APP_NAME` | `NKV-Proxy` | アプリ名 |
 | `MIAUTH_SESSION_TTL` | `600` | miAuth セッション有効期限（秒） |
 | `MASTODON_OAUTH_STATE_TTL` | `300` | Mastodon OAuth state 有効期限（秒） |
 

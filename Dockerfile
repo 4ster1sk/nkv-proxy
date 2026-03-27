@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ============================================================
 FROM python:3.11-slim AS runtime
 
-LABEL org.opencontainers.image.title="Misskey-Mastodon Proxy" \
+LABEL org.opencontainers.image.title="NKV-Proxy" \
       org.opencontainers.image.description="Mastodon API compatible proxy for Misskey" \
       org.opencontainers.image.source="https://github.com/yourorg/misskey-mastodon-proxy"
 
@@ -57,8 +57,7 @@ USER appuser
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
-    MISSKEY_INSTANCE_URL="https://misskey.io" \
-    APP_NAME="Misskey-Mastodon-Proxy" \
+    APP_NAME="NKV-Proxy" \
     APP_CALLBACK_URL="" \
     WORKERS=1
 

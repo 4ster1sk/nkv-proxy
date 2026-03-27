@@ -1,4 +1,4 @@
-# Misskey-Mastodon Proxy
+# NKV-Proxy
 
 Misskey クライアントからのリクエストを Mastodon API に変換するプロキシサーバーです。
 
@@ -59,8 +59,8 @@ uvicorn app.main:app --reload
 | `PROXY_BASE_URL` | *(自動推定)* | このプロキシの公開URL。OAuth コールバック・NodeInfo 生成に使用 |
 | `MASTODON_INSTANCE_URL` | *(必須)* | 上流 Mastodon のデフォルトインスタンス（ユーザー個別設定がない場合のフォールバック） |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL DSN |
-| `APP_NAME` | `Misskey-Mastodon-Proxy` | アプリ名（認証画面等に表示） |
-| `INSTANCE_TITLE` | `Misskey-Mastodon Bridge` | `/api/v1/instance` に返すインスタンス名 |
+| `APP_NAME` | `NKV-Proxy` | アプリ名（認証画面等に表示） |
+| `INSTANCE_TITLE` | `NKV Proxy` | `/api/v1/instance` に返すインスタンス名 |
 | `MIAUTH_SESSION_TTL` | `600` | miAuth セッション有効期限（秒） |
 | `MASTODON_OAUTH_STATE_TTL` | `300` | Mastodon OAuth state 有効期限（秒） |
 | `WORKERS` | `1` | uvicorn ワーカー数（WebSocket 使用時は 1 推奨） |

@@ -1,5 +1,5 @@
 # ============================================================
-# Misskey-Mastodon Proxy — docker-compose
+# NKV-Proxy — docker-compose
 #
 # 使い方:
 #   cp .env.example .env    # 編集後
@@ -11,7 +11,7 @@ services:
   # ─── PostgreSQL ───────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: misskey-mastodon-postgres
+    container_name: nkv-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: "${POSTGRES_USER:-proxy}"
@@ -37,8 +37,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
-    image: misskey-mastodon-proxy:latest
-    container_name: misskey-mastodon-proxy
+    image: nkv-proxy:latest
+    container_name: nkv-proxy
     restart: unless-stopped
     depends_on:
       postgres:
@@ -47,7 +47,7 @@ services:
       - "${LISTEN_PORT:-8000}:8000"
     environment:
       MASTODON_INSTANCE_URL: "${MASTODON_INSTANCE_URL:-https://nekonoverse.org}"
-      APP_NAME: "${APP_NAME:-Misskey-Mastodon-Proxy}"
+      APP_NAME: "${APP_NAME:-NKV-Proxy}"
       APP_CALLBACK_URL: "${APP_CALLBACK_URL:-}"
       PROXY_BASE_URL: "${PROXY_BASE_URL:-}"
       WORKERS: "${WORKERS:-1}"
@@ -76,7 +76,7 @@ services:
   # ─── Nginx (オプション) ───────────────────────────────────
   nginx:
     image: nginx:1.27-alpine
-    container_name: misskey-mastodon-nginx
+    container_name: nkv-nginx
     restart: unless-stopped
     profiles:
       - nginx
