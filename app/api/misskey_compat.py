@@ -1307,8 +1307,11 @@ async def api_users_lists_show(request: Request, db: AsyncSession = Depends(get_
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
-    lst = await mk.get_list(body["listId"])
+    lst = await mk.get_list(list_id)
     return _masto_list_to_mk(lst)
 
 
@@ -1329,8 +1332,11 @@ async def api_users_lists_update(request: Request, db: AsyncSession = Depends(ge
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
-    lst = await mk.update_list(body["listId"], body.get("name", ""))
+    lst = await mk.update_list(list_id, body.get("name", ""))
     return _masto_list_to_mk(lst)
 
 
@@ -1340,8 +1346,11 @@ async def api_users_lists_delete(request: Request, db: AsyncSession = Depends(ge
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
-    await mk.delete_list(body["listId"])
+    await mk.delete_list(list_id)
     return {}
 
 
@@ -1351,8 +1360,11 @@ async def api_users_lists_push(request: Request, db: AsyncSession = Depends(get_
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
-    await mk.add_list_accounts(body["listId"], [body["userId"]])
+    await mk.add_list_accounts(list_id, [body["userId"]])
     return {}
 
 
@@ -1362,8 +1374,11 @@ async def api_users_lists_pull(request: Request, db: AsyncSession = Depends(get_
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
-    await mk.remove_list_accounts(body["listId"], [body["userId"]])
+    await mk.remove_list_accounts(list_id, [body["userId"]])
     return {}
 
 
@@ -1373,8 +1388,11 @@ async def api_users_lists_get_memberships(request: Request, db: AsyncSession = D
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk, db_user = await _mastodon_client_with_user(token, db)
-    accounts = await mk.get_list_accounts(body["listId"], limit=clamp_other(body.get("limit", 30), db_user))
+    accounts = await mk.get_list_accounts(list_id, limit=clamp_other(body.get("limit", 30), db_user))
     return [masto_to_misskey_user_detailed(a) for a in accounts]
 
 
@@ -1384,9 +1402,12 @@ async def api_notes_user_list_timeline(request: Request, db: AsyncSession = Depe
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
+    list_id = body.get("listId")
+    if not list_id:
+        raise HTTPException(status_code=400, detail="listId is required")
     mk, db_user = await _mastodon_client_with_user(token, db)
     statuses = await mk.list_timeline(
-        body["listId"],
+        list_id,
         limit=clamp_tl(body.get("limit", 20), db_user),
         max_id=body.get("untilId"),
         since_id=body.get("sinceId"),
