@@ -1076,6 +1076,43 @@ class TestUserListsAPI:
         assert data[0]["id"] == "note001"
 
 
+class TestNotesState:
+
+    def test_notes_state_basic(self, client):
+        """bookmarked/muted が正しくマップされる。"""
+        status = {**MASTO_STATUS, "bookmarked": True, "muted": True}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_status = AsyncMock(return_value=status)
+            resp = client.post("/api/notes/state", json={**AUTH_BODY, "noteId": "note001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["isFavorited"] is True
+        assert data["isMutedThread"] is True
+        assert data["isWatching"] is False
+
+    def test_notes_state_not_favorited(self, client):
+        """bookmarked=False の場合は isFavorited=False。"""
+        status = {**MASTO_STATUS, "bookmarked": False, "muted": False}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_status = AsyncMock(return_value=status)
+            resp = client.post("/api/notes/state", json={**AUTH_BODY, "noteId": "note001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["isFavorited"] is False
+        assert data["isMutedThread"] is False
+        assert data["isWatching"] is False
+
+    def test_notes_state_missing_note_id(self, client):
+        """noteId 省略は 400 を返す。"""
+        resp = client.post("/api/notes/state", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
+    def test_notes_state_no_token(self, client):
+        """トークンなしは 401 を返す。"""
+        resp = client.post("/api/notes/state", json={"noteId": "note001"})
+        assert resp.status_code == 401
+
+
 class TestApShow:
 
     def test_ap_show_note(self, client):
