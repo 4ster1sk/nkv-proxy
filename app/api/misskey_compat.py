@@ -46,13 +46,24 @@ router = APIRouter(prefix="/api", tags=["misskey-compat"])
 
 async def _check_admin_allowed(token: str, db: AsyncSession) -> None:
     """
-    access_token が admin_restricted=True の場合 403 を返す。
     /api/admin/* エンドポイントの冒頭で呼ぶ。
+    - OAuthToken 以外（ApiKey 等）は 401
+    - admin スコープ（read:admin / write:admin / admin: 系）を持たない場合は 403
+    - admin_restricted=True の場合は 403
     """
     result = await crud.get_token_with_user(db, token)
     if result is None:
         raise HTTPException(status_code=401, detail="Credential required")
     token_obj, _ = result
+    scopes = token_obj.scopes.replace(",", " ").split()
+    has_admin_scope = any(
+        s.startswith(("read:admin", "write:admin", "admin:")) for s in scopes
+    )
+    if not has_admin_scope:
+        raise HTTPException(
+            status_code=403,
+            detail="This token does not have admin scope."
+        )
     if token_obj.admin_restricted:
         raise HTTPException(
             status_code=403,

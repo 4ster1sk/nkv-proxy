@@ -60,7 +60,7 @@ def client():
 
 async def _create_user_with_token(
     username: str,
-    scopes: str = "read write admin",
+    scopes: str = "read write read:admin write:admin",
     mastodon_token: str = "masto_token",
     admin_restricted: bool = False,
 ) -> tuple[str, int]:
@@ -213,18 +213,48 @@ class TestAdminRestriction:
             resp_b = client.post("/api/admin/show-users", json={"i": token_b})
         assert resp_b.status_code == 200
 
-    def test_token_without_admin_scope_also_blocked(self, client):
-        """admin スコープを持たないトークンで admin エンドポイントを叩いても制限チェックは動く。"""
-        # admin スコープなし + restricted=True
+    def test_token_without_admin_scope_blocked(self, client):
+        """admin スコープを持たないトークンで /api/admin/* は 403 になる（admin_restricted に関わらず）。"""
         access_token, _ = asyncio.get_event_loop().run_until_complete(
             _create_user_with_token(
                 "no_admin_scope_user",
-                scopes="read write",
+                scopes="read write follow push",
+                admin_restricted=False,
+            )
+        )
+        resp = client.post("/api/admin/show-users", json={"i": access_token})
+        assert resp.status_code == 403
+        assert "admin scope" in resp.json()["detail"]
+
+    def test_token_with_admin_scope_but_restricted(self, client):
+        """admin スコープありでも admin_restricted=True なら 403 になる。"""
+        access_token, _ = asyncio.get_event_loop().run_until_complete(
+            _create_user_with_token(
+                "admin_scope_restricted_user",
+                scopes="read write read:admin write:admin",
                 admin_restricted=True,
             )
         )
         resp = client.post("/api/admin/show-users", json={"i": access_token})
         assert resp.status_code == 403
+        assert "temporarily disabled" in resp.json()["detail"]
+
+    def test_api_key_blocked_from_admin(self, client):
+        """共通 ApiKey で /api/admin/* は 401 になる（OAuthToken ではないため）。"""
+        asyncio.get_event_loop().run_until_complete(
+            _create_user_with_token("apikey_admin_user", scopes="read write")
+        )
+
+        async def _create_key():
+            async with _TestSession() as s:
+                user = await crud.get_user_by_username(s, "apikey_admin_user")
+                key_obj = await crud.get_or_create_api_key(s, user.id)
+                await s.commit()
+                return key_obj.key
+
+        api_key = asyncio.get_event_loop().run_until_complete(_create_key())
+        resp = client.post("/api/admin/show-users", json={"i": api_key})
+        assert resp.status_code == 401
 
     def test_api_key_authentication(self, client):
         """共通 ApiKey で /api/i が認証できる（Mastodon連携済みの場合）。"""
