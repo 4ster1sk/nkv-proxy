@@ -85,8 +85,6 @@ UPSTREAM_META = {
     "googleAnalyticsMeasurementId": None,
     "swPublickey": "BDqzyfEjkTOis...",
     "themeColor": "#773894",
-    "disableSignup": True,
-    "serverChartsAuthRequired": True,
     "mascotImageUrl": "/assets/ai.png",
     "bannerUrl": "",
     "infoImageUrl": None,
@@ -157,7 +155,7 @@ UPSTREAM_META = {
     "noteSearchableScope": "global",
     "federation": "all",
     "cacheRemoteFiles": False,
-    "cacheRemoteSensitiveFiles": True,
+    "cacheRemoteSensitiveFiles": False,
     "requireSetup": False,
     "proxyAccountName": "proxy",
     "features": {
@@ -186,7 +184,7 @@ EXPECTED_META_KEYS = {
     "enableRecaptcha", "recaptchaSiteKey",
     "enableTurnstile", "turnstileSiteKey",
     "enableTestcaptcha", "googleAnalyticsMeasurementId",
-    "swPublickey", "themeColor", "disableSignup", "serverChartsAuthRequired",
+    "swPublickey", "themeColor",
     "mascotImageUrl", "bannerUrl", "infoImageUrl", "serverErrorImageUrl",
     "notFoundImageUrl", "iconUrl", "backgroundImageUrl", "logoImageUrl",
     "maxNoteTextLength", "defaultLightTheme", "defaultDarkTheme",
@@ -370,7 +368,7 @@ class TestMisskeyCompatMetaValues:
         assert data["noteSearchableScope"] == "global"
         assert data["federation"] == "all"
         assert data["cacheRemoteFiles"] is False
-        assert data["cacheRemoteSensitiveFiles"] is True
+        assert data["cacheRemoteSensitiveFiles"] is False
         assert data["clientOptions"]["entrancePageStyle"] == "simple"
 
     def test_upstream_unreachable_fallback_has_all_keys(self, client: TestClient):
