@@ -1170,6 +1170,7 @@ class TestIFavorites:
         assert isinstance(data, list)
         assert len(data) == 1
         assert data[0]["id"] == "note001"
+        assert data[0]["noteId"] == data[0]["id"]
 
     def test_i_favorites_empty(self, client):
         """ブックマークが空の場合は空配列を返す。"""
