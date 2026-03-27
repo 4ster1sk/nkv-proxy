@@ -1074,3 +1074,48 @@ class TestUserListsAPI:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["id"] == "note001"
+
+
+class TestApShow:
+
+    def test_ap_show_note(self, client):
+        """URI がノートに解決される場合 type=Note を返す。"""
+        uri = "https://nekonoverse.org/@testuser/note001"
+        search_result = {"statuses": [MASTO_STATUS], "accounts": [], "hashtags": []}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search = AsyncMock(return_value=search_result)
+            resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": uri})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "Note"
+        assert data["object"]["id"] == "note001"
+
+    def test_ap_show_user(self, client):
+        """URI がユーザーに解決される場合 type=User を返す。"""
+        uri = "https://nekonoverse.org/@testuser"
+        search_result = {"statuses": [], "accounts": [MASTO_ACCOUNT], "hashtags": []}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search = AsyncMock(return_value=search_result)
+            resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": uri})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["type"] == "User"
+        assert data["object"]["username"] == "testuser"
+
+    def test_ap_show_not_found(self, client):
+        """解決できない URI は 404 を返す。"""
+        search_result = {"statuses": [], "accounts": [], "hashtags": []}
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.search = AsyncMock(return_value=search_result)
+            resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": "https://example.com/unknown"})
+        assert resp.status_code == 404
+
+    def test_ap_show_missing_uri(self, client):
+        """uri を省略すると 400 を返す。"""
+        resp = client.post("/api/ap/show", json={**AUTH_BODY})
+        assert resp.status_code == 400
+
+    def test_ap_show_no_token(self, client):
+        """トークンなしは 401 を返す。"""
+        resp = client.post("/api/ap/show", json={"uri": "https://nekonoverse.org/@testuser"})
+        assert resp.status_code == 401
