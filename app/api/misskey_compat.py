@@ -470,6 +470,22 @@ async def api_i_notifications(request: Request, db: AsyncSession = Depends(get_d
     return [n for n in (masto_notification_to_mk(raw) for raw in masto_notifs) if n is not None]
 
 
+@router.post("/i/favorites")
+async def api_i_favorites(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    mk_client, db_user = await _mastodon_client_with_user(token, db)
+    params: dict = {"limit": clamp_other(body.get("limit", 20), db_user)}
+    if body.get("sinceId"):
+        params["min_id"] = body["sinceId"]
+    if body.get("untilId"):
+        params["max_id"] = body["untilId"]
+    statuses = await mk_client.get_bookmarks(**params)
+    return masto_statuses_to_mk_notes(statuses)
+
+
 # ---------------------------------------------------------------------------
 # /api/notifications
 # ---------------------------------------------------------------------------

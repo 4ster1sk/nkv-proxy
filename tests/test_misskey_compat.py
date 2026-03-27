@@ -1119,3 +1119,42 @@ class TestApShow:
         """トークンなしは 401 を返す。"""
         resp = client.post("/api/ap/show", json={"uri": "https://nekonoverse.org/@testuser"})
         assert resp.status_code == 401
+
+
+class TestIFavorites:
+
+    def test_i_favorites_returns_notes(self, client):
+        """ブックマーク一覧をノート配列で返す。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_bookmarks = AsyncMock(return_value=[MASTO_STATUS])
+            resp = client.post("/api/i/favorites", json={**AUTH_BODY})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["id"] == "note001"
+
+    def test_i_favorites_empty(self, client):
+        """ブックマークが空の場合は空配列を返す。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_bookmarks = AsyncMock(return_value=[])
+            resp = client.post("/api/i/favorites", json={**AUTH_BODY})
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_i_favorites_pagination(self, client):
+        """sinceId / untilId が min_id / max_id に変換される。"""
+        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            MockClient.return_value.get_bookmarks = AsyncMock(return_value=[])
+            resp = client.post("/api/i/favorites", json={
+                **AUTH_BODY, "sinceId": "abc", "untilId": "xyz", "limit": 5,
+            })
+            call_kwargs = MockClient.return_value.get_bookmarks.call_args
+        assert resp.status_code == 200
+        assert call_kwargs.kwargs.get("min_id") == "abc"
+        assert call_kwargs.kwargs.get("max_id") == "xyz"
+
+    def test_i_favorites_no_token(self, client):
+        """トークンなしは 401 を返す。"""
+        resp = client.post("/api/i/favorites", json={})
+        assert resp.status_code == 401
