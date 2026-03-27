@@ -11,12 +11,14 @@ Authorization: Bearer ヘッダーのどちらでも受け付ける。
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.limit_utils import clamp_notifications, clamp_other, clamp_tl
 from app.db import crud
 from app.db.database import get_db
 from app.services.instance_cache import supports_local_timeline
@@ -118,11 +120,13 @@ def _token(body: dict, request: Request) -> str | None:
     return None
 
 
-async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
+async def _mastodon_client_with_user(token: str, db: AsyncSession) -> "tuple[MastodonClient, Any]":
     """
-    access_token または api_key → User → MastodonClient を返す。
+    access_token または api_key → (MastodonClient, User) を返す。
     Mastodon未連携の場合は 403。
     """
+    from app.db.models import User as _User
+
     # まず OAuthToken で検索
     result = await crud.get_token_with_user(db, token)
     if result is None:
@@ -131,8 +135,6 @@ async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
         if api_key_obj is None:
             raise HTTPException(status_code=401, detail="Invalid or revoked token")
         from sqlalchemy import select as _sel
-
-        from app.db.models import User as _User
         user_result = await db.execute(_sel(_User).where(_User.id == api_key_obj.user_id))
         user = user_result.scalar_one_or_none()
         if user is None:
@@ -145,7 +147,13 @@ async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
             status_code=403,
             detail="Mastodon連携が未設定です。ダッシュボードで連携してください。"
         )
-    return MastodonClient(user.mastodon_token, user.mastodon_instance)
+    return MastodonClient(user.mastodon_token, user.mastodon_instance), user
+
+
+async def _mastodon_client(token: str, db: AsyncSession) -> "MastodonClient":
+    """互換ラッパー: MastodonClient のみを返す。"""
+    client, _ = await _mastodon_client_with_user(token, db)
+    return client
 
 
 def _mk_client(token: str) -> MisskeyClient:
@@ -441,8 +449,8 @@ async def api_i_notifications(request: Request, db: AsyncSession = Depends(get_d
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk_client = await _mastodon_client(token, db)
-    params: dict = {"limit": body.get("limit", 20)}
+    mk_client, db_user = await _mastodon_client_with_user(token, db)
+    params: dict = {"limit": clamp_notifications(body.get("limit", 20), db_user)}
     if body.get("sinceId"):
         params["min_id"] = body["sinceId"]
     if body.get("untilId"):
@@ -474,8 +482,8 @@ async def api_notes_timeline(request: Request, db: AsyncSession = Depends(get_db
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
-    _tl_params: dict = {"limit": body.get("limit", 20)}
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    _tl_params: dict = {"limit": clamp_tl(body.get("limit", 20), db_user)}
     if body.get("untilId"):
         _tl_params["max_id"] = body["untilId"]
     if body.get("sinceId"):
@@ -536,8 +544,8 @@ async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(
 
     if not token:
         return []
-    mk = await _mastodon_client(token, db)
-    _tl_params: dict = {"local": True, "limit": body.get("limit", 20)}
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    _tl_params: dict = {"local": True, "limit": clamp_tl(body.get("limit", 20), db_user)}
     if body.get("untilId"):
         _tl_params["max_id"] = body["untilId"]
     if body.get("sinceId"):
@@ -549,10 +557,10 @@ async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(
 async def api_notes_global_timeline(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
-    mk = await _mastodon_client(token or "", db) if token else None
-    if mk is None:
+    if not token:
         return []
-    _tl_params3: dict = {"limit": body.get("limit", 20)}
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    _tl_params3: dict = {"limit": clamp_tl(body.get("limit", 20), db_user)}
     if body.get("untilId"):
         _tl_params3["max_id"] = body["untilId"]
     if body.get("sinceId"):
@@ -650,10 +658,9 @@ async def api_notes_search(request: Request, db: AsyncSession = Depends(get_db))
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
+    mk, db_user = await _mastodon_client_with_user(token, db)
     query = body.get("query", "")
-    limit = body.get("limit", 20)
-    result = await mk.search(query, type="statuses", limit=limit)
+    result = await mk.search(query, type="statuses", limit=clamp_other(body.get("limit", 20), db_user))
     statuses = result.get("statuses", []) if isinstance(result, dict) else []
     return masto_statuses_to_mk_notes(statuses)
 
@@ -849,8 +856,8 @@ async def api_users_search(request: Request, db: AsyncSession = Depends(get_db))
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
-    accounts = await mk.search_accounts(body.get("query", ""), limit=body.get("limit", 20))
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    accounts = await mk.search_accounts(body.get("query", ""), limit=clamp_other(body.get("limit", 20), db_user))
     return [masto_to_misskey_user_detailed(a) for a in accounts]
 
 
@@ -860,11 +867,11 @@ async def api_users_followers(request: Request, db: AsyncSession = Depends(get_d
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
+    mk, db_user = await _mastodon_client_with_user(token, db)
     # 自分自身の account ID を取得（followeeId に使用）
     me = await mk.verify_credentials()
     viewer_id = me.get("id", "")
-    accounts = await mk.get_followers(body["userId"], limit=body.get("limit", 40))
+    accounts = await mk.get_followers(body["userId"], limit=clamp_other(body.get("limit", 40), db_user))
     return [
         _mk_follow_relationship(a, viewer_id, is_following=False)
         for a in (accounts if isinstance(accounts, list) else [])
@@ -877,11 +884,11 @@ async def api_users_following(request: Request, db: AsyncSession = Depends(get_d
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
+    mk, db_user = await _mastodon_client_with_user(token, db)
     # 自分自身の account ID を取得（followerId に使用）
     me = await mk.verify_credentials()
     viewer_id = me.get("id", "")
-    accounts = await mk.get_following(body["userId"], limit=body.get("limit", 40))
+    accounts = await mk.get_following(body["userId"], limit=clamp_other(body.get("limit", 40), db_user))
     return [
         _mk_follow_relationship(a, viewer_id, is_following=True)
         for a in (accounts if isinstance(accounts, list) else [])
@@ -894,8 +901,8 @@ async def api_users_notes(request: Request, db: AsyncSession = Depends(get_db)):
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
-    statuses = await mk.get_account_statuses(body["userId"], limit=body.get("limit", 20))
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    statuses = await mk.get_account_statuses(body["userId"], limit=clamp_tl(body.get("limit", 20), db_user))
     return masto_statuses_to_mk_notes(statuses)
 
 
@@ -944,12 +951,13 @@ async def api_blocking_delete(request: Request):
 
 
 @router.post("/blocking/list")
-async def api_blocking_list(request: Request):
+async def api_blocking_list(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _mk_client(token).get_blocks(limit=body.get("limit", 40))
+    _, db_user = await _mastodon_client_with_user(token, db)
+    return await _mk_client(token).get_blocks(limit=clamp_other(body.get("limit", 40), db_user))
 
 
 # ---------------------------------------------------------------------------
@@ -975,12 +983,13 @@ async def api_muting_delete(request: Request):
 
 
 @router.post("/muting/list")
-async def api_muting_list(request: Request):
+async def api_muting_list(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    return await _mk_client(token).get_mutes(limit=body.get("limit", 40))
+    _, db_user = await _mastodon_client_with_user(token, db)
+    return await _mk_client(token).get_mutes(limit=clamp_other(body.get("limit", 40), db_user))
 
 
 # ---------------------------------------------------------------------------
@@ -1296,8 +1305,8 @@ async def api_users_lists_get_memberships(request: Request, db: AsyncSession = D
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
-    accounts = await mk.get_list_accounts(body["listId"], limit=body.get("limit", 30))
+    mk, db_user = await _mastodon_client_with_user(token, db)
+    accounts = await mk.get_list_accounts(body["listId"], limit=clamp_other(body.get("limit", 30), db_user))
     return [masto_to_misskey_user_detailed(a) for a in accounts]
 
 
@@ -1307,10 +1316,10 @@ async def api_notes_user_list_timeline(request: Request, db: AsyncSession = Depe
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk = await _mastodon_client(token, db)
+    mk, db_user = await _mastodon_client_with_user(token, db)
     statuses = await mk.list_timeline(
         body["listId"],
-        limit=body.get("limit", 20),
+        limit=clamp_tl(body.get("limit", 20), db_user),
         max_id=body.get("untilId"),
         since_id=body.get("sinceId"),
     )

@@ -122,12 +122,14 @@ async def set_user_limits(
     db: AsyncSession, user_id: str, *,
     limit_max_tl: int | None,
     limit_max_notifications: int | None,
+    limit_max_other: int | None,
 ) -> None:
     await db.execute(
         update(User).where(User.id == user_id)
         .values(
             limit_max_tl=limit_max_tl,
             limit_max_notifications=limit_max_notifications,
+            limit_max_other=limit_max_other,
         )
     )
 

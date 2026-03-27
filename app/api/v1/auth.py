@@ -1312,6 +1312,7 @@ async def settings_limits_page(
 
     val_tl = user.limit_max_tl if user.limit_max_tl is not None else ""
     val_notif = user.limit_max_notifications if user.limit_max_notifications is not None else ""
+    val_other = user.limit_max_other if user.limit_max_other is not None else ""
 
     body = f"""
 <div class="card">
@@ -1334,6 +1335,11 @@ async def settings_limits_page(
         <input type="number" name="limit_max_notifications" value="{val_notif}" min="1" max="80"
                placeholder="未設定（デフォルト: {settings.API_LIMIT_MAX}）">
       </div>
+      <div class="form-group">
+        <label>その他 limit 上限</label>
+        <input type="number" name="limit_max_other" value="{val_other}" min="1" max="80"
+               placeholder="未設定（デフォルト: {settings.API_LIMIT_MAX}）">
+      </div>
       <button type="submit" class="btn">保存</button>
     </form>
     <p class="note" style="margin-top:1rem"><a href="/dashboard">← ダッシュボードに戻る</a></p>
@@ -1347,6 +1353,7 @@ async def settings_limits_save(
     token: str = Form(...),
     limit_max_tl: str = Form(default=""),
     limit_max_notifications: str = Form(default=""),
+    limit_max_other: str = Form(default=""),
     db: AsyncSession = Depends(get_db),
 ):
     from urllib.parse import quote
@@ -1369,6 +1376,7 @@ async def settings_limits_save(
         db, user.id,
         limit_max_tl=_parse(limit_max_tl),
         limit_max_notifications=_parse(limit_max_notifications),
+        limit_max_other=_parse(limit_max_other),
     )
     await db.commit()
     return RedirectResponse(url=f"/settings/limits?success={quote('設定を保存しました')}", status_code=302)
