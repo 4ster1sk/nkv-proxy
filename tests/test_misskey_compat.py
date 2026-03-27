@@ -238,7 +238,7 @@ class TestMisskeyCompatMetaStructure:
     """実際の /api/meta レスポンス構造との完全互換テスト"""
 
     def test_all_top_level_keys_present(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         assert resp.status_code == 200
@@ -248,7 +248,7 @@ class TestMisskeyCompatMetaStructure:
 
     def test_no_extra_unexpected_keys(self, client: TestClient):
         """予期しない余分なキーがないこと（厳密互換）"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         data = resp.json()
@@ -256,7 +256,7 @@ class TestMisskeyCompatMetaStructure:
         assert not extra, f"Unexpected extra keys: {extra}"
 
     def test_policies_all_keys_present(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         policies = resp.json()["policies"]
@@ -264,7 +264,7 @@ class TestMisskeyCompatMetaStructure:
         assert not missing, f"Missing policies keys: {missing}"
 
     def test_policies_no_extra_keys(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         policies = resp.json()["policies"]
@@ -272,7 +272,7 @@ class TestMisskeyCompatMetaStructure:
         assert not extra, f"Unexpected policies keys: {extra}"
 
     def test_features_all_keys_present(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         features = resp.json()["features"]
@@ -280,7 +280,7 @@ class TestMisskeyCompatMetaStructure:
         assert not missing, f"Missing features keys: {missing}"
 
     def test_client_options_all_keys_present(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         opts = resp.json()["clientOptions"]
@@ -293,14 +293,14 @@ class TestMisskeyCompatMetaValues:
 
     def test_antenna_limit_overridden_to_zero(self, client: TestClient):
         """上流が antennaLimit=5 でもプロキシは必ず 0 を返す"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)  # upstream has antennaLimit=5
             resp = client.post("/api/meta", json={})
         assert resp.json()["policies"]["antennaLimit"] == 0
 
     def test_miauth_feature_always_true(self, client: TestClient):
         """miAuth は常に True"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient, response={**UPSTREAM_META,
                 "features": {**UPSTREAM_META["features"], "miauth": False}})
             resp = client.post("/api/meta", json={})
@@ -308,7 +308,7 @@ class TestMisskeyCompatMetaValues:
 
     def test_uri_matches_upstream(self, client: TestClient):
         """uri はスキームなしのホスト名"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         uri = resp.json()["uri"]
@@ -316,14 +316,14 @@ class TestMisskeyCompatMetaValues:
         assert uri == "https://misskey.example.com"
 
     def test_version_from_upstream(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         assert resp.json()["version"] == "2026.3.2-alpha.2"
 
     def test_policies_types(self, client: TestClient):
         """policies の各フィールドの型チェック"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         p = resp.json()["policies"]
@@ -340,26 +340,26 @@ class TestMisskeyCompatMetaValues:
         assert isinstance(p["uploadableFileTypes"], list)
 
     def test_ads_is_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         assert isinstance(resp.json()["ads"], list)
 
     def test_server_rules_is_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         assert isinstance(resp.json()["serverRules"], list)
 
     def test_langs_is_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         assert isinstance(resp.json()["langs"], list)
 
     def test_upstream_values_passed_through(self, client: TestClient):
         """上流の値がそのまま反映される"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             _make_mock_meta(MockClient)
             resp = client.post("/api/meta", json={})
         data = resp.json()
@@ -375,7 +375,7 @@ class TestMisskeyCompatMetaValues:
 
     def test_upstream_unreachable_fallback_has_all_keys(self, client: TestClient):
         """Misskey が落ちていても全 61 フィールドを返す"""
-        with patch("app.api.misskey_compat.httpx.AsyncClient") as MockClient:
+        with patch("app.api.mk.meta.httpx.AsyncClient") as MockClient:
             MockClient.return_value.__aenter__ = AsyncMock(return_value=MockClient.return_value)
             MockClient.return_value.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value.post = AsyncMock(side_effect=Exception("timeout"))
@@ -392,13 +392,13 @@ class TestMisskeyCompatMetaValues:
 
 class TestMisskeyCompatStats:
     def test_api_stats(self, client: TestClient):
-        with patch("app.api.misskey_compat._forward", new_callable=AsyncMock) as mock_fwd:
+        with patch("app.api.mk.meta._forward", new_callable=AsyncMock) as mock_fwd:
             mock_fwd.return_value = {"originalUsersCount": 100, "originalNotesCount": 5000}
             resp = client.post("/api/stats", json={})
         assert resp.status_code == 200
 
     def test_api_stats_fallback_on_error(self, client: TestClient):
-        with patch("app.api.misskey_compat._forward", new_callable=AsyncMock) as mock_fwd:
+        with patch("app.api.mk.meta._forward", new_callable=AsyncMock) as mock_fwd:
             mock_fwd.side_effect = Exception("unreachable")
             resp = client.post("/api/stats", json={})
         assert resp.status_code == 200
@@ -420,7 +420,7 @@ class TestMisskeyCompatI:
             "followers_count": 10, "following_count": 5, "statuses_count": 100,
             "fields": [],
         }
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(return_value=masto_account)
             resp = client.post("/api/i", json=AUTH_BODY)
         assert resp.status_code == 200
@@ -441,7 +441,7 @@ class TestMisskeyCompatI:
             "followers_count": 0, "following_count": 0, "statuses_count": 0,
             "fields": [],
         }
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(return_value=masto_account)
             resp = client.post("/api/i", json={},
                                headers={"Authorization": f"Bearer {AUTH_BODY['i']}"})
@@ -456,13 +456,13 @@ class TestMisskeyCompatI:
             "followers_count": 0, "following_count": 0, "statuses_count": 0,
             "fields": [],
         }
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.update_credentials = AsyncMock(return_value=masto_account)
             resp = client.post("/api/i/update", json={**AUTH_BODY, "name": "New Name"})
         assert resp.status_code == 200
 
     def test_api_i_notifications(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_notifications = AsyncMock(return_value=[SAMPLE_NOTIFICATION])
             resp = client.post("/api/i/notifications", json=AUTH_BODY)
         assert resp.status_code == 200
@@ -471,7 +471,7 @@ class TestMisskeyCompatI:
 
 class TestMisskeyCompatNotes:
     def test_api_notes_timeline(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.home_timeline = AsyncMock(return_value=[MASTO_STATUS])
             resp = client.post("/api/notes/timeline", json=AUTH_BODY)
         assert resp.status_code == 200
@@ -484,9 +484,9 @@ class TestMisskeyCompatNotes:
         assert resp.status_code == 401
 
     def test_api_notes_local_timeline(self, client: TestClient):
-        with patch("app.api.misskey_compat.supports_local_timeline",
+        with patch("app.api.mk.notes.supports_local_timeline",
                    new=AsyncMock(return_value=True)):
-            with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            with patch("app.api.mk.helpers.MastodonClient") as MockClient:
                 MockClient.return_value.public_timeline = AsyncMock(return_value=[MASTO_STATUS])
                 resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
         assert resp.status_code == 200
@@ -502,39 +502,39 @@ class TestMisskeyCompatNotes:
 
     def test_api_notes_local_timeline_auto_disabled(self, client: TestClient):
         """ENABLE_LOCAL_TIMELINE=auto で上流が LTL 非対応なら 400 を返す。"""
-        with patch("app.api.misskey_compat.supports_local_timeline",
+        with patch("app.api.mk.notes.supports_local_timeline",
                    new=AsyncMock(return_value=False)):
             resp = client.post("/api/notes/local-timeline", json=AUTH_BODY)
         assert resp.status_code == 400
 
     def test_api_notes_global_timeline(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.public_timeline = AsyncMock(return_value=[MASTO_STATUS])
             resp = client.post("/api/notes/global-timeline", json=AUTH_BODY)
         assert resp.status_code == 200
 
     def test_api_notes_create(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.create_status = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/create", json={**AUTH_BODY, "text": "Hello!"})
         assert resp.status_code == 200
         assert "createdNote" in resp.json()
 
     def test_api_notes_delete(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.delete_status = AsyncMock(return_value={})
             resp = client.post("/api/notes/delete", json={**AUTH_BODY, "noteId": "note001"})
         assert resp.status_code == 200
 
     def test_api_notes_show(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/show", json={**AUTH_BODY, "noteId": "note001"})
         assert resp.status_code == 200
         assert resp.json()["id"] == "note001"
 
     def test_api_notes_search(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search = AsyncMock(
                 return_value={"statuses": [MASTO_STATUS], "accounts": [], "hashtags": []}
             )
@@ -547,7 +547,7 @@ class TestMisskeyCompatNotes:
 
 class TestMisskeyCompatReactions:
     def test_api_reactions_create(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.add_emoji_reaction = AsyncMock(return_value=MASTO_STATUS)
             MockClient.return_value.favourite = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/reactions/create",
@@ -560,7 +560,7 @@ class TestMisskeyCompatReactions:
         assert resp.status_code == 401
 
     def test_api_reactions_delete(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.remove_emoji_reaction = AsyncMock(return_value=MASTO_STATUS)
             MockClient.return_value.unfavourite = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/reactions/delete",
@@ -568,7 +568,7 @@ class TestMisskeyCompatReactions:
         assert resp.status_code == 200
 
     def test_api_reactions_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value={
                 "id": "note001",
                 "emoji_reactions": [{"name": "❤", "count": 1, "me": True, "account_ids": []}],
@@ -583,7 +583,7 @@ class TestMisskeyCompatNotesCreate:
 
     def test_create_note_without_files(self, client: TestClient):
         """fileIds 未指定（None）でも 422 にならない。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.create_status = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/create", json={
                 **AUTH_BODY,
@@ -597,7 +597,7 @@ class TestMisskeyCompatNotesCreate:
 
     def test_create_note_with_cw(self, client: TestClient):
         """CW付きノートが spoiler_text として送られる。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             instance = MockClient.return_value
             instance.create_status = AsyncMock(return_value=MASTO_STATUS)
             resp = client.post("/api/notes/create", json={
@@ -620,7 +620,7 @@ class TestMisskeyCompatNotesCreate:
             return MASTO_STATUS
 
         with patch.object(RealClient, "_post", mock_post):
-            with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+            with patch("app.api.mk.helpers.MastodonClient") as MockClient:
                 instance = MockClient.return_value
                 instance.create_status = AsyncMock(return_value=MASTO_STATUS)
                 resp = client.post("/api/notes/create", json={
@@ -634,26 +634,26 @@ class TestMisskeyCompatNotesCreate:
 
 class TestMisskeyCompatUsers:
     def test_api_users_show_by_id(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_account = AsyncMock(return_value=MASTO_ACCOUNT)
             resp = client.post("/api/users/show", json={**AUTH_BODY, "userId": "user001"})
         assert resp.status_code == 200
         assert resp.json()["username"] == "testuser"
 
     def test_api_users_show_by_username(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search_accounts = AsyncMock(return_value=[MASTO_ACCOUNT])
             resp = client.post("/api/users/show", json={**AUTH_BODY, "username": "testuser"})
         assert resp.status_code == 200
 
     def test_api_users_search(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search_accounts = AsyncMock(return_value=[MASTO_ACCOUNT])
             resp = client.post("/api/users/search", json={**AUTH_BODY, "query": "test"})
         assert resp.status_code == 200
 
     def test_api_users_followers(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(
                 return_value={**MASTO_ACCOUNT, "id": "viewer001"}
             )
@@ -662,7 +662,7 @@ class TestMisskeyCompatUsers:
         assert resp.status_code == 200
 
     def test_api_users_following(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(
                 return_value={**MASTO_ACCOUNT, "id": "viewer001"}
             )
@@ -676,7 +676,7 @@ class TestMisskeyCompatFollowRelationship:
 
     def test_following_has_required_fields(self, client: TestClient):
         """following レスポンスに Misskey 互換フィールドが含まれる。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(
                 return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
             )
@@ -702,7 +702,7 @@ class TestMisskeyCompatFollowRelationship:
 
     def test_followers_has_required_fields(self, client: TestClient):
         """followers レスポンスに Misskey 互換フィールドが含まれる。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(
                 return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
             )
@@ -722,7 +722,7 @@ class TestMisskeyCompatFollowRelationship:
 
     def test_following_id_is_deterministic(self, client: TestClient):
         """同じペアなら常に同じ id が生成される。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(
                 return_value={**MASTO_ACCOUNT, "id": "viewer001"}  # id を後で指定して上書き確定
             )
@@ -736,7 +736,7 @@ class TestMisskeyCompatFollowRelationship:
 
 class TestMisskeyCompatFollowing:
     def test_api_following_create(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.follow = AsyncMock(return_value={})
             resp = client.post("/api/following/create",
@@ -744,7 +744,7 @@ class TestMisskeyCompatFollowing:
         assert resp.status_code == 200
 
     def test_api_following_delete(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.unfollow = AsyncMock(return_value={})
             resp = client.post("/api/following/delete",
@@ -758,7 +758,7 @@ class TestMisskeyCompatFollowing:
 
 class TestMisskeyCompatBlocking:
     def test_api_blocking_create(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.block = AsyncMock(return_value={})
             resp = client.post("/api/blocking/create",
@@ -766,7 +766,7 @@ class TestMisskeyCompatBlocking:
         assert resp.status_code == 200
 
     def test_api_blocking_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.get_blocks = AsyncMock(return_value=[])
             resp = client.post("/api/blocking/list", json=AUTH_BODY)
@@ -775,7 +775,7 @@ class TestMisskeyCompatBlocking:
 
 class TestMisskeyCompatMuting:
     def test_api_muting_create(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.mute = AsyncMock(return_value={})
             resp = client.post("/api/muting/create",
@@ -783,7 +783,7 @@ class TestMisskeyCompatMuting:
         assert resp.status_code == 200
 
     def test_api_muting_list(self, client: TestClient):
-        with patch("app.api.misskey_compat.MisskeyClient") as MockClient:
+        with patch("app.api.mk.helpers.MisskeyClient") as MockClient:
             instance = MockClient.return_value
             instance.get_mutes = AsyncMock(return_value=[])
             resp = client.post("/api/muting/list", json=AUTH_BODY)
@@ -916,7 +916,7 @@ class TestReactionsListRemoteEmoji:
     """/api/notes/reactions がリモート絵文字のキーを正しく返すテスト"""
 
     def test_reactions_list_uses_build_reaction_key(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value={
                 "id": "note001",
                 "emoji_reactions": [
@@ -932,7 +932,7 @@ class TestReactionsListRemoteEmoji:
         assert data[0]["reaction"] == ":blobcat@remote.host:"
 
     def test_reactions_list_nekonoverse_format(self, client: TestClient):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value={
                 "id": "note001",
                 "emoji_reactions": [
@@ -987,7 +987,7 @@ class TestUsersShow:
     }
 
     def test_users_show_by_userid(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_account = AsyncMock(return_value=self.REMOTE_ACCOUNT)
             resp = client.post("/api/users/show", json={**AUTH_BODY, "userId": "remote001"})
         assert resp.status_code == 200
@@ -995,7 +995,7 @@ class TestUsersShow:
         assert data["host"] == "remote.example.com"
 
     def test_users_show_by_username_and_host(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search_accounts = AsyncMock(return_value=[self.REMOTE_ACCOUNT])
             resp = client.post("/api/users/show", json={
                 **AUTH_BODY,
@@ -1011,7 +1011,7 @@ class TestUsersShow:
 
     def test_users_show_by_username_only(self, client):
         local_account = {**self.REMOTE_ACCOUNT, "acct": "remoteuser", "id": "local001"}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search_accounts = AsyncMock(return_value=[local_account])
             resp = client.post("/api/users/show", json={**AUTH_BODY, "username": "remoteuser"})
         assert resp.status_code == 200
@@ -1022,7 +1022,7 @@ class TestUserListsAPI:
     MASTO_LIST = {"id": "list001", "title": "Friends", "replies_policy": "followed", "exclusive": False}
 
     def test_lists_list(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_lists = AsyncMock(return_value=[self.MASTO_LIST])
             resp = client.post("/api/users/lists/list", json=AUTH_BODY)
         assert resp.status_code == 200
@@ -1032,42 +1032,42 @@ class TestUserListsAPI:
         assert data[0]["name"] == "Friends"
 
     def test_lists_create(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.create_list = AsyncMock(return_value=self.MASTO_LIST)
             resp = client.post("/api/users/lists/create", json={**AUTH_BODY, "name": "Friends"})
         assert resp.status_code == 200
         assert resp.json()["name"] == "Friends"
 
     def test_lists_show(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_list = AsyncMock(return_value=self.MASTO_LIST)
             resp = client.post("/api/users/lists/show", json={**AUTH_BODY, "listId": "list001"})
         assert resp.status_code == 200
         assert resp.json()["id"] == "list001"
 
     def test_lists_delete(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.delete_list = AsyncMock(return_value={})
             resp = client.post("/api/users/lists/delete", json={**AUTH_BODY, "listId": "list001"})
         assert resp.status_code == 200
         assert resp.json() == {}
 
     def test_lists_push(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.add_list_accounts = AsyncMock(return_value={})
             resp = client.post("/api/users/lists/push", json={**AUTH_BODY, "listId": "list001", "userId": "user001"})
         assert resp.status_code == 200
         MockClient.return_value.add_list_accounts.assert_called_once_with("list001", ["user001"])
 
     def test_lists_pull(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.remove_list_accounts = AsyncMock(return_value={})
             resp = client.post("/api/users/lists/pull", json={**AUTH_BODY, "listId": "list001", "userId": "user001"})
         assert resp.status_code == 200
         MockClient.return_value.remove_list_accounts.assert_called_once_with("list001", ["user001"])
 
     def test_user_list_timeline(self, client):
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.list_timeline = AsyncMock(return_value=[MASTO_STATUS])
             resp = client.post("/api/notes/user-list-timeline", json={**AUTH_BODY, "listId": "list001"})
         assert resp.status_code == 200
@@ -1116,7 +1116,7 @@ class TestNotesState:
     def test_notes_state_basic(self, client):
         """bookmarked/muted が正しくマップされる。"""
         status = {**MASTO_STATUS, "bookmarked": True, "muted": True}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value=status)
             resp = client.post("/api/notes/state", json={**AUTH_BODY, "noteId": "note001"})
         assert resp.status_code == 200
@@ -1128,7 +1128,7 @@ class TestNotesState:
     def test_notes_state_not_favorited(self, client):
         """bookmarked=False の場合は isFavorited=False。"""
         status = {**MASTO_STATUS, "bookmarked": False, "muted": False}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_status = AsyncMock(return_value=status)
             resp = client.post("/api/notes/state", json={**AUTH_BODY, "noteId": "note001"})
         assert resp.status_code == 200
@@ -1154,7 +1154,7 @@ class TestApShow:
         """URI がノートに解決される場合 type=Note を返す。"""
         uri = "https://nekonoverse.org/@testuser/note001"
         search_result = {"statuses": [MASTO_STATUS], "accounts": [], "hashtags": []}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search = AsyncMock(return_value=search_result)
             resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": uri})
         assert resp.status_code == 200
@@ -1166,7 +1166,7 @@ class TestApShow:
         """URI がユーザーに解決される場合 type=User を返す。"""
         uri = "https://nekonoverse.org/@testuser"
         search_result = {"statuses": [], "accounts": [MASTO_ACCOUNT], "hashtags": []}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search = AsyncMock(return_value=search_result)
             resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": uri})
         assert resp.status_code == 200
@@ -1177,7 +1177,7 @@ class TestApShow:
     def test_ap_show_not_found(self, client):
         """解決できない URI は 404 を返す。"""
         search_result = {"statuses": [], "accounts": [], "hashtags": []}
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.search = AsyncMock(return_value=search_result)
             resp = client.post("/api/ap/show", json={**AUTH_BODY, "uri": "https://example.com/unknown"})
         assert resp.status_code == 404
@@ -1197,7 +1197,7 @@ class TestIFavorites:
 
     def test_i_favorites_returns_notes(self, client):
         """ブックマーク一覧を Misskey 互換のラップ構造で返す。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_bookmarks = AsyncMock(return_value=[MASTO_STATUS])
             resp = client.post("/api/i/favorites", json={**AUTH_BODY})
         assert resp.status_code == 200
@@ -1213,7 +1213,7 @@ class TestIFavorites:
 
     def test_i_favorites_empty(self, client):
         """ブックマークが空の場合は空配列を返す。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_bookmarks = AsyncMock(return_value=[])
             resp = client.post("/api/i/favorites", json={**AUTH_BODY})
         assert resp.status_code == 200
@@ -1221,7 +1221,7 @@ class TestIFavorites:
 
     def test_i_favorites_pagination(self, client):
         """sinceId / untilId が min_id / max_id に変換される。"""
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_bookmarks = AsyncMock(return_value=[])
             resp = client.post("/api/i/favorites", json={
                 **AUTH_BODY, "sinceId": "abc", "untilId": "xyz", "limit": 5,

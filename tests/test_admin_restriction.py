@@ -91,7 +91,7 @@ class TestAdminRestriction:
             _create_user_with_token("admin_user1b", admin_restricted=False)
         )
 
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_account = AsyncMock(return_value=[])
             MockClient.return_value._get = AsyncMock(return_value=[])
             resp = client.post("/api/admin/show-users", json={"i": access_token})
@@ -139,7 +139,7 @@ class TestAdminRestriction:
             "mentions": [], "tags": [], "emojis": [],
             "account": {"id": "u001", "username": "testuser", "display_name": "Test"},
         }
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.home_timeline = AsyncMock(return_value=[masto_status])
             resp = client.post("/api/notes/timeline", json={"i": access_token})
         assert resp.status_code == 200
@@ -189,7 +189,7 @@ class TestAdminRestriction:
         assert result is False
 
         # 制限解除後は 200
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value._get = AsyncMock(return_value=[])
             resp = client.post("/api/admin/show-users", json={"i": access_token})
         assert resp.status_code == 200
@@ -208,7 +208,7 @@ class TestAdminRestriction:
         assert resp_a.status_code == 403
 
         # token_b は 200
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value._get = AsyncMock(return_value=[])
             resp_b = client.post("/api/admin/show-users", json={"i": token_b})
         assert resp_b.status_code == 200
@@ -278,7 +278,7 @@ class TestAdminRestriction:
             "followers_count": 0, "following_count": 0, "statuses_count": 0,
             "fields": [],
         }
-        with patch("app.api.misskey_compat.MastodonClient") as MockClient:
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.verify_credentials = AsyncMock(return_value=masto_account)
             resp = client.post("/api/i", json={"i": api_key})
         assert resp.status_code == 200
