@@ -624,6 +624,26 @@ async def api_notes_show(request: Request, db: AsyncSession = Depends(get_db)):
     return masto_status_to_mk_note(status)
 
 
+@router.post("/ap/show")
+async def api_ap_show(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    uri = body.get("uri", "")
+    if not uri:
+        raise HTTPException(status_code=400, detail="uri is required")
+    mk = await _mastodon_client(token, db)
+    result = await mk.search(uri, resolve="true", limit=1)
+    statuses = result.get("statuses") or []
+    accounts = result.get("accounts") or []
+    if statuses:
+        return {"type": "Note", "object": masto_status_to_mk_note(statuses[0])}
+    if accounts:
+        return {"type": "User", "object": masto_to_misskey_user_detailed(accounts[0])}
+    raise HTTPException(status_code=404, detail="Not found")
+
+
 @router.post("/notes/renotes")
 async def api_notes_renotes(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
