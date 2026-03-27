@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -410,7 +411,24 @@ async def api_users_lists_show(request: Request, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=400, detail="listId is required")
     mk = await _mastodon_client(token, db)
     lst = await mk.get_list(list_id)
-    return _masto_list_to_mk(lst)
+
+    # メンバー一覧を max_id ページネーションで取得（最大5回、0.5秒間隔）
+    user_ids: list[str] = []
+    max_id: str | None = None
+    for _ in range(5):
+        page = await mk.get_list_accounts(list_id, limit=80, **({"max_id": max_id} if max_id else {}))
+        if not isinstance(page, list) or not page:
+            break
+        for a in page:
+            uid = a.get("id")
+            if uid:
+                user_ids.append(uid)
+        max_id = page[-1].get("id")
+        await asyncio.sleep(0.5)
+
+    result = _masto_list_to_mk(lst)
+    result["userIds"] = user_ids
+    return result
 
 
 @router.post("/users/lists/create")

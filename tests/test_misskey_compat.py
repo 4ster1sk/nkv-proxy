@@ -1039,9 +1039,39 @@ class TestUserListsAPI:
     def test_lists_show(self, client):
         with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_list = AsyncMock(return_value=self.MASTO_LIST)
+            MockClient.return_value.get_list_accounts = AsyncMock(return_value=[])
             resp = client.post("/api/users/lists/show", json={**AUTH_BODY, "listId": "list001"})
         assert resp.status_code == 200
         assert resp.json()["id"] == "list001"
+
+    def test_lists_show_populates_user_ids(self, client):
+        """userIds がメンバーの ID で埋まること。"""
+        members_page1 = [{"id": "u001"}, {"id": "u002"}]
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
+            MockClient.return_value.get_list = AsyncMock(return_value=self.MASTO_LIST)
+            # 1ページ目にメンバーあり、2ページ目は空で終了
+            MockClient.return_value.get_list_accounts = AsyncMock(
+                side_effect=[members_page1, []]
+            )
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                resp = client.post("/api/users/lists/show", json={**AUTH_BODY, "listId": "list001"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "list001"
+        assert data["userIds"] == ["u001", "u002"]
+
+    def test_lists_show_paginates_up_to_5_pages(self, client):
+        """ページが続く場合は最大5回でとめること。"""
+        page = [{"id": f"u{i:03d}"} for i in range(80)]
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
+            MockClient.return_value.get_list = AsyncMock(return_value=self.MASTO_LIST)
+            MockClient.return_value.get_list_accounts = AsyncMock(return_value=page)
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                resp = client.post("/api/users/lists/show", json={**AUTH_BODY, "listId": "list001"})
+        assert resp.status_code == 200
+        # 最大5回 × 80件 = 400件
+        assert len(resp.json()["userIds"]) == 400
+        assert MockClient.return_value.get_list_accounts.call_count == 5
 
     def test_lists_delete(self, client):
         with patch("app.api.mk.helpers.MastodonClient") as MockClient:
