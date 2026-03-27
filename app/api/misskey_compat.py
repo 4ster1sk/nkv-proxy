@@ -643,6 +643,24 @@ async def api_notes_show(request: Request, db: AsyncSession = Depends(get_db)):
     return masto_status_to_mk_note(status)
 
 
+@router.post("/notes/state")
+async def api_notes_state(request: Request, db: AsyncSession = Depends(get_db)):
+    body = await _body(request)
+    token = _token(body, request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Credential required")
+    note_id = body.get("noteId")
+    if not note_id:
+        raise HTTPException(status_code=400, detail="noteId is required")
+    mk = await _mastodon_client(token, db)
+    status = await mk.get_status(note_id)
+    return {
+        "isFavorited": bool(status.get("bookmarked")),
+        "isMutedThread": bool(status.get("muted")),
+        "isWatching": False,
+    }
+
+
 @router.post("/ap/show")
 async def api_ap_show(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
