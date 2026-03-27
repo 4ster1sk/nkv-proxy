@@ -23,7 +23,7 @@ FROM python:3.11-slim AS runtime
 
 LABEL org.opencontainers.image.title="NKV-Proxy" \
       org.opencontainers.image.description="Mastodon API compatible proxy for Misskey" \
-      org.opencontainers.image.source="https://github.com/yourorg/misskey-mastodon-proxy"
+      org.opencontainers.image.source="https://github.com/4ster1sk/nkv-proxy"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
