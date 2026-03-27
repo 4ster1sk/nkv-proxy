@@ -9,6 +9,12 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mk.helpers import (
+    _body,
+    _mastodon_client,
+    _mastodon_client_with_user,
+    _token,
+)
 from app.core.config import settings
 from app.core.limit_utils import clamp_other, clamp_tl
 from app.db import crud
@@ -20,12 +26,9 @@ from app.services.note_converter import (
     masto_statuses_to_mk_notes,
     mk_renote_stub,
 )
-from app.services.user_converter import masto_to_misskey_user_detailed, masto_to_misskey_user_lite
-from app.api.mk.helpers import (
-    _body,
-    _token,
-    _mastodon_client,
-    _mastodon_client_with_user,
+from app.services.user_converter import (
+    masto_to_misskey_user_detailed,
+    masto_to_misskey_user_lite,
 )
 
 router = APIRouter()
@@ -74,6 +77,7 @@ async def api_notes_local_timeline(request: Request, db: AsyncSession = Depends(
                 result = await crud.get_api_key_by_key(db, token)
                 if result:
                     from sqlalchemy import select as _sel
+
                     from app.db.models import User as _User
                     user_result = await db.execute(_sel(_User).where(_User.id == result.user_id))
                     user = user_result.scalar_one_or_none()

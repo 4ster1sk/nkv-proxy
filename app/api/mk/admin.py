@@ -7,13 +7,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.database import get_db
 from app.api.mk.helpers import (
     _body,
-    _token,
-    _mastodon_client,
     _check_admin_allowed,
+    _mastodon_client,
+    _token,
 )
+from app.db.database import get_db
 
 router = APIRouter()
 

@@ -8,19 +8,22 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mk.helpers import (
+    _body,
+    _mastodon_client,
+    _mastodon_client_with_user,
+    _mk_client,
+    _token,
+)
 from app.core.limit_utils import clamp_notifications, clamp_other
 from app.db import crud
 from app.db.database import get_db
 from app.db.models import OAuthToken
-from app.services.note_converter import masto_notification_to_mk, masto_statuses_to_mk_notes
-from app.services.user_converter import masto_to_misskey_user_detailed
-from app.api.mk.helpers import (
-    _body,
-    _token,
-    _mastodon_client,
-    _mastodon_client_with_user,
-    _mk_client,
+from app.services.note_converter import (
+    masto_notification_to_mk,
+    masto_statuses_to_mk_notes,
 )
+from app.services.user_converter import masto_to_misskey_user_detailed
 
 router = APIRouter()
 
