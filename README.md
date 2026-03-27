@@ -31,8 +31,8 @@ Misskey クライアントアプリ
 ### Docker Compose（推奨）
 
 ```bash
-git clone https://github.com/yourorg/misskey-mastodon-proxy
-cd misskey-mastodon-proxy
+git clone https://github.com/4ster1sk/nkv-proxy
+cd nkv-proxy
 cp .env.example .env
 # .env を編集（PROXY_BASE_URL, MASTODON_INSTANCE_URL）
 docker compose up -d
@@ -57,13 +57,17 @@ uvicorn app.main:app --reload
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
 | `PROXY_BASE_URL` | *(自動推定)* | このプロキシの公開URL。OAuth コールバック・NodeInfo 生成に使用 |
-| `MASTODON_INSTANCE_URL` | *(必須)* | 上流 Mastodon のデフォルトインスタンス（ユーザー個別設定がない場合のフォールバック） |
+| `MASTODON_INSTANCE_URL` | `https://nekonoverse.org` | 上流 Mastodon のデフォルトインスタンス（ユーザー個別設定がない場合のフォールバック） |
 | `DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL DSN |
 | `APP_NAME` | `NKV-Proxy` | アプリ名（認証画面等に表示） |
 | `INSTANCE_TITLE` | `NKV Proxy` | `/api/v1/instance` に返すインスタンス名 |
+| `ENABLE_LOCAL_TIMELINE` | `auto` | `auto` / `true` / `false`。上流インスタンスの LTL 対応を自動判定 |
+| `API_LIMIT_MAX` | `40` | タイムライン取得の limit 上限デフォルト値 |
 | `MIAUTH_SESSION_TTL` | `600` | miAuth セッション有効期限（秒） |
 | `MASTODON_OAUTH_STATE_TTL` | `300` | Mastodon OAuth state 有効期限（秒） |
 | `WORKERS` | `1` | uvicorn ワーカー数（WebSocket 使用時は 1 推奨） |
+| `LOG_LEVEL` | `INFO` | ログレベル（`DEBUG` / `INFO` / `WARNING` / `ERROR`） |
+| `STREAMING_DEBUG` | `false` | `true` で SSE 生データ・変換前後を DEBUG 出力（`LOG_LEVEL=DEBUG` も必要） |
 
 ---
 
@@ -99,28 +103,56 @@ uvicorn app.main:app --reload
 
 | エンドポイント | 対応 | 変換先 |
 |--------------|------|--------|
+| `POST /api/meta` | ✅ | インスタンス情報（上流転送） |
+| `POST /api/stats` | ✅ | 統計情報（上流転送） |
 | `POST /api/i` | ✅ | `GET /api/v1/accounts/verify_credentials` |
 | `POST /api/i/update` | ✅ | `PATCH /api/v1/accounts/update_credentials` |
+| `POST /api/i/notifications` | ✅ | `GET /api/v1/notifications` |
+| `POST /api/notifications/mark-all-as-read` | ✅ | `DELETE /api/v1/notifications` |
 | `POST /api/notes/timeline` | ✅ | `GET /api/v1/timelines/home` |
 | `POST /api/notes/local-timeline` | ✅ | `GET /api/v1/timelines/public?local=true` |
 | `POST /api/notes/global-timeline` | ✅ | `GET /api/v1/timelines/public` |
+| `POST /api/notes/user-list-timeline` | ✅ | `GET /api/v1/timelines/list/{id}` |
 | `POST /api/notes/create` | ✅ | `POST /api/v1/statuses` |
 | `POST /api/notes/delete` | ✅ | `DELETE /api/v1/statuses/{id}` |
 | `POST /api/notes/show` | ✅ | `GET /api/v1/statuses/{id}` |
+| `POST /api/notes/renotes` | ✅ | `GET /api/v1/statuses/{id}/reblogged_by` |
+| `POST /api/notes/replies` | ✅ | `GET /api/v1/statuses/{id}/context` |
+| `POST /api/notes/search` | ✅ | `GET /api/v1/search?type=statuses` |
 | `POST /api/notes/reactions/create` | ✅ | `POST /api/v1/statuses/{id}/favourite` |
 | `POST /api/notes/reactions/delete` | ✅ | `DELETE /api/v1/statuses/{id}/unfavourite` |
+| `POST /api/notes/reactions` | ✅ | `GET /api/v1/statuses/{id}/favourited_by` |
 | `POST /api/notes/favorites/create` | ✅ | `POST /api/v1/statuses/{id}/bookmark` |
+| `POST /api/notes/favorites/delete` | ✅ | `DELETE /api/v1/statuses/{id}/unbookmark` |
 | `POST /api/emojis` | ✅ | `GET /api/v1/custom_emojis` |
 | `POST /api/users/show` | ✅ | `GET /api/v1/accounts/{id}` |
 | `POST /api/users/search` | ✅ | `GET /api/v1/accounts/search` |
 | `POST /api/users/followers` | ✅ | `GET /api/v1/accounts/{id}/followers` |
 | `POST /api/users/following` | ✅ | `GET /api/v1/accounts/{id}/following` |
 | `POST /api/users/notes` | ✅ | `GET /api/v1/accounts/{id}/statuses` |
+| `POST /api/users/lists/list` | ✅ | `GET /api/v1/lists` |
+| `POST /api/users/lists/show` | ✅ | `GET /api/v1/lists/{id}` |
+| `POST /api/users/lists/create` | ✅ | `POST /api/v1/lists` |
+| `POST /api/users/lists/update` | ✅ | `PUT /api/v1/lists/{id}` |
+| `POST /api/users/lists/delete` | ✅ | `DELETE /api/v1/lists/{id}` |
+| `POST /api/users/lists/push` | ✅ | `POST /api/v1/lists/{id}/accounts` |
+| `POST /api/users/lists/pull` | ✅ | `DELETE /api/v1/lists/{id}/accounts` |
+| `POST /api/users/lists/get-memberships` | ✅ | `GET /api/v1/lists/{id}/accounts` |
 | `POST /api/following/create` | ✅ | `POST /api/v1/accounts/{id}/follow` |
 | `POST /api/following/delete` | ✅ | `POST /api/v1/accounts/{id}/unfollow` |
 | `POST /api/blocking/create` | ✅ | `POST /api/v1/accounts/{id}/block` |
+| `POST /api/blocking/delete` | ✅ | `POST /api/v1/accounts/{id}/unblock` |
+| `POST /api/blocking/list` | ✅ | `GET /api/v1/blocks` |
 | `POST /api/muting/create` | ✅ | `POST /api/v1/accounts/{id}/mute` |
-| `POST /api/admin/*` | ✅ | `GET/POST /api/v1/admin/*`（一時無効化可） |
+| `POST /api/muting/delete` | ✅ | `POST /api/v1/accounts/{id}/unmute` |
+| `POST /api/muting/list` | ✅ | `GET /api/v1/mutes` |
+| `POST /api/admin/show-users` | ✅ | `GET /api/v1/admin/accounts`（一時無効化可） |
+| `POST /api/admin/show-user` | ✅ | `GET /api/v1/admin/accounts/{id}`（一時無効化可） |
+| `POST /api/admin/suspend-user` | ✅ | `POST /api/v1/admin/accounts/{id}/action`（一時無効化可） |
+| `POST /api/admin/unsuspend-user` | ✅ | `POST /api/v1/admin/accounts/{id}/unsuspend`（一時無効化可） |
+| `POST /api/admin/abuse-user-reports` | ✅ | `GET /api/v1/admin/reports`（一時無効化可） |
+| `POST /api/antennas/*` | ❌ | 未対応（400 エラー） |
+| `POST /api/channels/*` | ❌ | 未対応（400 エラー） |
 
 ### Mastodon 互換 API (`/api/v1/*`)
 
@@ -148,30 +180,35 @@ uvicorn app.main:app --reload
 - **共通 API キー** — Web UI テスト用キーの表示（👁 ボタン）・再生成
 - **Misskey API テスト** — プロキシ自身に API リクエストを送信
 - **Mastodon API テスト** — 上流 Mastodon に直接リクエストを送信
-- **2段階認証設定** — TOTP の有効化・無効化
+- **2段階認証設定** — TOTP の有効化・無効化（`/settings/2fa`）
+- **limit 設定** — タイムライン・通知・その他の取得件数上限をユーザーごとに設定（`/settings/limits`）
 
 ---
 
 ## 開発
 
 ```bash
-# テスト実行
-pytest tests/ -v
+# テスト実行（e2e 除く）
+pytest tests/ --ignore=tests/e2e -v
 
 # 特定テストのみ
 pytest tests/test_admin_restriction.py -v
 pytest tests/test_streaming.py -v
+pytest tests/test_limit_settings.py -v
 pytest tests/test_auth_db.py::TestMiauthConfirmFlow -v
 ```
 
 ### マイグレーション
 
 ```bash
-# 初回
+# 初回・全適用
 alembic upgrade head
 
-# 差分適用（0002: admin_restricted + api_keys）
-alembic upgrade 0002
+# 差分適用
+# 0002: admin_restricted + api_keys
+# 0003: limit_max_tl / limit_max_notifications
+# 0004: limit_max_other
+alembic upgrade 0004
 ```
 
 ---
