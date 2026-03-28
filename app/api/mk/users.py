@@ -30,6 +30,9 @@ async def api_users_show(request: Request, db: AsyncSession = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
     mk = await _mastodon_client(token, db)
+    if "userIds" in body:
+        accounts = await mk.get_accounts(body["userIds"])
+        return [masto_to_misskey_user_detailed(a) for a in accounts]
     if "userId" in body:
         account = await mk.get_account(body["userId"])
     else:

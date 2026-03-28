@@ -78,6 +78,9 @@ class MastodonClient:
     async def get_account(self, account_id: str) -> dict:
         return await self._get(f"accounts/{account_id}")  # type: ignore
 
+    async def get_accounts(self, ids: list[str]) -> list:
+        return await self._get("accounts", params={"id[]": ids})  # type: ignore
+
     async def get_account_statuses(self, account_id: str, **params) -> list:
         return await self._get(f"accounts/{account_id}/statuses", params=params)  # type: ignore
 
