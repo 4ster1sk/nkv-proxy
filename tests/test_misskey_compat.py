@@ -460,7 +460,7 @@ class TestMisskeyCompatI:
             resp = client.post("/api/i/update", json={**AUTH_BODY, "name": "New Name"})
         assert resp.status_code == 200
         mock_instance.update_credentials.assert_called_once_with(
-            encoding="form-urlencoded", display_name="New Name"
+            display_name="New Name"
         )
 
     def test_api_i_update_field_mapping(self, client: TestClient):
@@ -488,7 +488,6 @@ class TestMisskeyCompatI:
             })
         assert resp.status_code == 200
         mock_instance.update_credentials.assert_called_once_with(
-            encoding="form-urlencoded",
             display_name="Test",
             note="bio text",
             locked=True,

@@ -88,17 +88,12 @@ class MastodonClient:
     async def verify_credentials(self) -> dict:
         return await self._get("accounts/verify_credentials")  # type: ignore
 
-    async def update_credentials(self, encoding: str = "form-urlencoded", **kwargs) -> dict:
+    async def update_credentials(self, **kwargs) -> dict:
         url = f"{self.base}/api/v1/accounts/update_credentials"
-        logger.debug("Mastodon PATCH %s encoding=%s", url, encoding)
-        if encoding == "multipart":
-            files = {k: (None, str(v)) for k, v in kwargs.items() if v is not None}
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.patch(url, headers=self.headers, files=files)
-        else:
-            data = {k: v for k, v in kwargs.items() if v is not None}
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.patch(url, headers=self.headers, data=data)
+        logger.debug("Mastodon PATCH %s", url)
+        files = {k: (None, str(v)) for k, v in kwargs.items() if v is not None}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.patch(url, headers=self.headers, files=files)
         if resp.status_code == 204:
             return {}
         if resp.status_code >= 400:
