@@ -22,7 +22,7 @@ def upgrade() -> None:
             "update_credentials_encoding",
             sa.String(32),
             nullable=False,
-            server_default="form-urlencoded",
+            server_default="multipart",
         ),
     )
 

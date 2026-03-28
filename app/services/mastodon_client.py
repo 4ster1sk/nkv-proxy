@@ -88,7 +88,7 @@ class MastodonClient:
     async def verify_credentials(self) -> dict:
         return await self._get("accounts/verify_credentials")  # type: ignore
 
-    async def update_credentials(self, encoding: str = "form-urlencoded", **kwargs) -> dict:
+    async def update_credentials(self, encoding: str = "multipart", **kwargs) -> dict:
         url = f"{self.base}/api/v1/accounts/update_credentials"
         logger.debug("Mastodon PATCH %s encoding=%s", url, encoding)
         if encoding == "multipart":

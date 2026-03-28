@@ -73,7 +73,7 @@ async def api_i_update(request: Request, db: AsyncSession = Depends(get_db)):
             payload[masto_key] = body[mk_key]
 
     instance_url = db_user.mastodon_instance if db_user else None
-    encoding = "form-urlencoded"
+    encoding = "multipart"
     if instance_url:
         masto_app = await crud.get_mastodon_app(db, instance_url)
         if masto_app:
