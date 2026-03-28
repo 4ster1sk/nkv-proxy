@@ -217,6 +217,9 @@ class MastodonApp(Base):
     instance_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     client_id: Mapped[str] = mapped_column(Text, nullable=False)
     client_secret: Mapped[str] = mapped_column(Text, nullable=False)
+    update_credentials_encoding: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="form-urlencoded"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now
     )

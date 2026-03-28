@@ -455,9 +455,46 @@ class TestMisskeyCompatI:
             "fields": [],
         }
         with patch("app.api.mk.helpers.MastodonClient") as MockClient:
-            MockClient.return_value.update_credentials = AsyncMock(return_value=masto_account)
+            mock_instance = MockClient.return_value
+            mock_instance.update_credentials = AsyncMock(return_value=masto_account)
             resp = client.post("/api/i/update", json={**AUTH_BODY, "name": "New Name"})
         assert resp.status_code == 200
+        mock_instance.update_credentials.assert_called_once_with(
+            encoding="form-urlencoded", display_name="New Name"
+        )
+
+    def test_api_i_update_field_mapping(self, client: TestClient):
+        """Misskey フィールドが Mastodon フィールドに正しくマッピングされること"""
+        masto_account = {
+            "id": "user001", "username": "testuser", "display_name": "Test",
+            "locked": True, "bot": False, "created_at": "2023-01-01T00:00:00Z",
+            "note": "bio text", "url": "https://nekonoverse.org/@testuser",
+            "avatar": None, "header": None,
+            "followers_count": 0, "following_count": 0, "statuses_count": 0,
+            "fields": [],
+        }
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
+            mock_instance = MockClient.return_value
+            mock_instance.update_credentials = AsyncMock(return_value=masto_account)
+            resp = client.post("/api/i/update", json={
+                **AUTH_BODY,
+                "name": "Test",
+                "description": "bio text",
+                "isLocked": True,
+                "isBot": False,
+                "isCat": False,
+                "lang": "ja-JP",       # 非対応フィールド（無視される）
+                "location": None,      # 非対応フィールド（無視される）
+            })
+        assert resp.status_code == 200
+        mock_instance.update_credentials.assert_called_once_with(
+            encoding="form-urlencoded",
+            display_name="Test",
+            note="bio text",
+            locked=True,
+            bot=False,
+            is_cat=False,
+        )
 
     def test_api_i_notifications(self, client: TestClient):
         with patch("app.api.mk.helpers.MastodonClient") as MockClient:
