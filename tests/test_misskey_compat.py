@@ -631,6 +631,17 @@ class TestMisskeyCompatNotesCreate:
 
 
 class TestMisskeyCompatUsers:
+    def test_api_users_show_by_user_ids(self, client: TestClient):
+        with patch("app.api.mk.helpers.MastodonClient") as MockClient:
+            MockClient.return_value.get_accounts = AsyncMock(return_value=[MASTO_ACCOUNT, MASTO_ACCOUNT])
+            resp = client.post("/api/users/show", json={**AUTH_BODY, "userIds": ["user001", "user002"]})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) == 2
+        assert data[0]["username"] == "testuser"
+        MockClient.return_value.get_accounts.assert_called_once_with(["user001", "user002"])
+
     def test_api_users_show_by_id(self, client: TestClient):
         with patch("app.api.mk.helpers.MastodonClient") as MockClient:
             MockClient.return_value.get_account = AsyncMock(return_value=MASTO_ACCOUNT)
