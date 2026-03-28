@@ -54,6 +54,22 @@ class MastodonClient:
             raise HTTPException(status_code=resp.status_code, detail=resp.text)
         return resp.json()
 
+    async def _patch(self, path: str, json: dict | None = None, data: dict | None = None) -> dict | list:
+        url = f"{self.base}/api/v1/{path}"
+        logger.debug("Mastodon PATCH %s", url)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.patch(
+                url,
+                headers=self.headers,
+                json=json,
+                data=data,
+            )
+        if resp.status_code == 204:
+            return {}
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        return resp.json()
+
     async def _delete(self, path: str) -> dict | list:
         url = f"{self.base}/api/v1/{path}"
         logger.debug("Mastodon DELETE %s", url)
@@ -73,7 +89,7 @@ class MastodonClient:
         return await self._get("accounts/verify_credentials")  # type: ignore
 
     async def update_credentials(self, **kwargs) -> dict:
-        return await self._post("accounts/update_credentials", data=kwargs)  # type: ignore
+        return await self._patch("accounts/update_credentials", data=kwargs)  # type: ignore
 
     async def get_account(self, account_id: str) -> dict:
         return await self._get(f"accounts/{account_id}")  # type: ignore
