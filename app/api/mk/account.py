@@ -47,17 +47,40 @@ async def api_i(request: Request, db: AsyncSession = Depends(get_db)):
     return masto_to_misskey_user_detailed(masto_user, db_user=db_user, is_me=True)
 
 
+_MK_TO_MASTO_PROFILE: dict[str, str] = {
+    "name": "display_name",
+    "description": "note",
+    "isBot": "bot",
+    "isCat": "is_cat",
+    "isLocked": "locked",
+    "birthday": "birthday",
+}
+
+
 @router.post("/i/update")
 async def api_i_update(request: Request, db: AsyncSession = Depends(get_db)):
     body = await _body(request)
     token = _token(body, request)
     if not token:
         raise HTTPException(status_code=401, detail="Credential required")
-    mk_client = await _mastodon_client(token, db)
-    payload = {k: v for k, v in body.items() if k != "i"}
-    masto_user = await mk_client.update_credentials(**payload)
+
     result = await crud.get_token_with_user(db, token)
     db_user = result[1] if result else None
+
+    payload = {}
+    for mk_key, masto_key in _MK_TO_MASTO_PROFILE.items():
+        if mk_key in body:
+            payload[masto_key] = body[mk_key]
+
+    instance_url = db_user.mastodon_instance if db_user else None
+    encoding = "form-urlencoded"
+    if instance_url:
+        masto_app = await crud.get_mastodon_app(db, instance_url)
+        if masto_app:
+            encoding = masto_app.update_credentials_encoding
+
+    mk_client = await _mastodon_client(token, db)
+    masto_user = await mk_client.update_credentials(encoding=encoding, **payload)
     return masto_to_misskey_user_detailed(masto_user, db_user=db_user, is_me=True)
 
 
