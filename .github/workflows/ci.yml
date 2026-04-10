@@ -56,7 +56,16 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Run pytest (unit tests only)
-        run: pytest tests/ -v --tb=short --color=yes --ignore=tests/e2e
+        run: pytest tests/ -v --tb=short --color=yes --ignore=tests/e2e --cov=app --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.11'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload test results
         if: always() && matrix.python-version == '3.11'
