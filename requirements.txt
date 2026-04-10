@@ -8,7 +8,7 @@ pydantic-settings==2.7.0
 python-jose[cryptography]==3.4.0
 cryptography==44.0.0
 starlette==0.41.3
-python-multipart==0.0.20
+python-multipart==0.0.22
 # Database
 sqlalchemy==2.0.36
 asyncpg==0.30.0
